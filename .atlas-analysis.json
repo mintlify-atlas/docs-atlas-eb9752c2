@@ -1,0 +1,95 @@
+{
+  "projectType": "saas",
+  "projectName": "BillBuddy",
+  "projectDescription": "A collaborative expense splitting application that helps users manage shared expenses, track balances, and settle debts within groups.",
+  "theme": "almond",
+  "primaryColor": "#10b981",
+  "lightColor": "#34d399",
+  "darkColor": "#059669",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/authentication",
+              "features/groups",
+              "features/expenses",
+              "features/settlements"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/creating-groups",
+              "guides/adding-expenses",
+              "guides/settling-debts",
+              "guides/managing-members"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment",
+              "configuration/database",
+              "configuration/email"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/auth",
+              "api/groups",
+              "api/expenses",
+              "api/settlements"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "User authentication with JWT tokens",
+    "Group creation and member management",
+    "Expense tracking with multiple split options",
+    "Automatic debt simplification algorithm",
+    "Settlement tracking and history",
+    "Real-time balance calculations"
+  ],
+  "publicApiSurface": [
+    "POST /api/auth/register",
+    "POST /api/auth/login",
+    "GET /api/auth/me",
+    "POST /api/groups",
+    "GET /api/groups",
+    "GET /api/groups/:id",
+    "POST /api/groups/:id/members",
+    "POST /api/expenses",
+    "GET /api/expenses/group/:groupId",
+    "GET /api/expenses/recent",
+    "POST /api/settlements",
+    "GET /api/settlements/group/:groupId"
+  ]
+}
