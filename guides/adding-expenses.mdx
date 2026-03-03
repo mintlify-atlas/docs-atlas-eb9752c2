@@ -1,0 +1,383 @@
+---
+title: Adding Expenses
+description: Learn how to add, split, and manage expenses within your BillBuddy groups
+---
+
+Expenses are the core of BillBuddy. When you add an expense, it's automatically split among selected group members and their balances are updated in real-time.
+
+## Understanding Expense Splitting
+
+BillBuddy uses a simple equal-split model:
+
+<Info>
+  When you add an expense, the total amount is divided equally among all selected members. 
+  
+  For example, if you paid ₹600 for dinner and split it among 3 people, each person owes ₹200.
+</Info>
+
+The system automatically:
+- **Increases** the payer's balance by the full amount
+- **Decreases** each split member's balance by their share
+- Displays net balances in the group view
+
+<Steps>
+  <Step title="Navigate to Add Expense">
+    From your group page, click the **"Add Expense"** button in the top-right corner.
+    
+    You'll be taken to `/add-expense/:groupId` where the form is pre-loaded with your group's member list.
+
+    ```jsx
+    // Source: Group.jsx:131
+    const handleAddExpense = () => navigate(`/add-expense/${id}`);
+    ```
+  </Step>
+
+  <Step title="Enter Expense Details">
+    Fill in the expense information:
+
+    <ParamField path="description" type="string" required>
+      A brief description of what the expense was for
+      
+      Examples: "Grocery shopping", "Uber to airport", "Team lunch at Thai Palace"
+      
+      Maximum 100 characters.
+    </ParamField>
+
+    <ParamField path="amount" type="number" required>
+      The total amount you paid
+      
+      Must be a positive number. Currency is in ₹ (Indian Rupees).
+    </ParamField>
+
+    ```jsx
+    // Source: AddExpense.jsx:131-149
+    <TextField
+      required
+      fullWidth
+      label="Description"
+      name="description"
+      value={formData.description}
+      onChange={handleChange}
+    />
+    <TextField
+      required
+      fullWidth
+      label="Amount"
+      name="amount"
+      type="number"
+      value={formData.amount}
+      onChange={handleChange}
+    />
+    ```
+  </Step>
+
+  <Step title="Select Who to Split With">
+    Choose which group members should share this expense:
+
+    1. By default, **all group members** are selected
+    2. Use the "Split Between" dropdown to modify the selection
+    3. You can select any combination of members
+
+    <Note>
+      The payer is automatically included in the split calculation. If you want to pay for everyone without charging yourself, you'll need to track that separately.
+    </Note>
+
+    ```jsx
+    // Source: AddExpense.jsx:42-44, 151-165
+    // Default: All members selected
+    setFormData(prev => ({
+      ...prev,
+      splitBetween: res.data.members.map(member => member.user._id),
+    }));
+
+    // Multi-select dropdown
+    <FormControl fullWidth>
+      <InputLabel>Split Between</InputLabel>
+      <Select
+        multiple
+        value={formData.splitBetween}
+        onChange={handleSplitChange}
+      >
+        {group.members.map((member) => (
+          <MenuItem key={member.user._id} value={member.user._id}>
+            {member.user.name}
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
+    ```
+
+    <Tip>
+      Use the multi-select to exclude members who weren't part of a particular expense. For example, if only 3 out of 5 roommates went to dinner, select only those 3.
+    </Tip>
+  </Step>
+
+  <Step title="Submit the Expense">
+    Click **"Add Expense"** to save.
+
+    The backend will:
+    1. Create the expense record with you as the payer
+    2. Link it to your group
+    3. Calculate and update member balances
+    4. Redirect you back to the group page
+
+    ```javascript
+    // Backend: routes/expenses.js:34-60
+    const expense = new Expense({
+      description,
+      amount,
+      paidBy: req.user.id,  // You are the payer
+      group,
+      splitAmong,
+      category
+    });
+
+    await expense.save();
+
+    // Add expense to group's expense list
+    await Group.findByIdAndUpdate(group, {
+      $push: { expenses: expense._id }
+    });
+    ```
+
+    You'll see the expense appear in the group's expense list immediately.
+  </Step>
+</Steps>
+
+## How Balance Calculation Works
+
+BillBuddy calculates balances dynamically based on all expenses in a group:
+
+```javascript
+// Source: Group.jsx:76-88
+const newBalances = {};
+currentGroup.members.forEach(member => {
+  newBalances[member.user._id] = 0;
+});
+
+expenses.forEach(expense => {
+  // Payer gains the full amount
+  newBalances[expense.paidBy._id] += expense.amount;
+  
+  // Each split member loses their share
+  const splitAmount = expense.amount / expense.splitAmong.length;
+  expense.splitAmong.forEach(user => {
+    newBalances[user._id] -= splitAmount;
+  });
+});
+```
+
+### Balance Examples
+
+<Tabs>
+  <Tab title="Simple Split">
+    **Scenario:** Alice pays ₹300 for groceries, split between Alice, Bob, and Charlie
+
+    ```
+    Initial Balances:
+    Alice:   ₹0
+    Bob:     ₹0
+    Charlie: ₹0
+
+    After Expense:
+    Alice:   +₹300 - ₹100 = +₹200  (Alice is owed ₹200)
+    Bob:     -₹100                  (Bob owes ₹100)
+    Charlie: -₹100                  (Charlie owes ₹100)
+    ```
+  </Tab>
+
+  <Tab title="Multiple Expenses">
+    **Scenario:** 
+    1. Alice pays ₹300 for groceries (split 3 ways)
+    2. Bob pays ₹600 for rent (split 3 ways)
+
+    ```
+    After Grocery Expense:
+    Alice:   +₹200
+    Bob:     -₹100
+    Charlie: -₹100
+
+    After Rent Expense:
+    Alice:   +₹200 - ₹200 = ₹0
+    Bob:     -₹100 + ₹600 - ₹200 = +₹300
+    Charlie: -₹100 - ₹200 = -₹300
+
+    Final: Charlie owes Bob ₹300, Alice is settled
+    ```
+  </Tab>
+
+  <Tab title="Partial Split">
+    **Scenario:** Alice pays ₹400 for dinner, split only between Alice and Bob (Charlie didn't attend)
+
+    ```
+    Initial Balances:
+    Alice:   ₹0
+    Bob:     ₹0
+    Charlie: ₹0
+
+    After Expense:
+    Alice:   +₹400 - ₹200 = +₹200  (Alice is owed ₹200)
+    Bob:     -₹200                  (Bob owes ₹200)
+    Charlie: ₹0                     (Charlie unaffected)
+    ```
+  </Tab>
+</Tabs>
+
+## Viewing Expenses
+
+All expenses appear on the group page in chronological order:
+
+```jsx
+// Source: Group.jsx:228-249
+<List>
+  {expenses.map((expense) => (
+    <ListItem>
+      <ListItemAvatar>
+        <Avatar><MoneyIcon /></Avatar>
+      </ListItemAvatar>
+      <ListItemText
+        primary={expense.description}
+        secondary={`₹${expense.amount} - Paid by ${expense.paidBy.name} on ${new Date(expense.date).toLocaleDateString()}`}
+      />
+    </ListItem>
+  ))}
+</List>
+```
+
+Each expense shows:
+- Description
+- Total amount
+- Who paid
+- Date created
+
+## Expense Categories
+
+While the UI doesn't expose this yet, expenses support categories in the backend:
+
+<CodeGroup>
+```javascript Available Categories
+// Source: models/Expense.js:34-38
+category: {
+  type: String,
+  enum: ['Food', 'Travel', 'Shopping', 'Entertainment', 'Utilities', 'Other'],
+  default: 'Other'
+}
+```
+</CodeGroup>
+
+<Note>
+  Categories are stored but not yet displayed in the UI. This is a planned feature for filtering and analytics.
+</Note>
+
+## API Request Example
+
+Here's what happens when you submit an expense:
+
+<CodeGroup>
+```javascript Request
+POST /api/expenses
+
+{
+  "description": "Pizza delivery",
+  "amount": 450,
+  "group": "507f1f77bcf86cd799439011",
+  "splitAmong": [
+    "507f191e810c19729de860ea",
+    "507f191e810c19729de860eb",
+    "507f191e810c19729de860ec"
+  ]
+}
+```
+
+```javascript Response
+{
+  "_id": "507f1f77bcf86cd799439012",
+  "description": "Pizza delivery",
+  "amount": 450,
+  "paidBy": "507f191e810c19729de860ea",
+  "splitAmong": [
+    "507f191e810c19729de860ea",
+    "507f191e810c19729de860eb",
+    "507f191e810c19729de860ec"
+  ],
+  "group": "507f1f77bcf86cd799439011",
+  "category": "Other",
+  "date": "2024-01-15T18:45:00.000Z"
+}
+```
+</CodeGroup>
+
+## Managing Expenses
+
+<Tabs>
+  <Tab title="Edit Expense">
+    Only the person who paid can edit an expense:
+
+    ```javascript
+    // Backend: routes/expenses.js:136-139
+    if (expense.paidBy.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        message: 'Not authorized to update this expense' 
+      });
+    }
+    ```
+
+    <Warning>
+      The UI doesn't currently support editing expenses. This is a planned feature.
+    </Warning>
+  </Tab>
+
+  <Tab title="Delete Expense">
+    Only the payer can delete an expense:
+
+    ```javascript
+    // Backend: routes/expenses.js:168-169
+    if (expense.paidBy.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        message: 'Not authorized to delete this expense' 
+      });
+    }
+    ```
+
+    When deleted:
+    1. The expense is removed from the group's expense list
+    2. Balances are recalculated on the next page load
+  </Tab>
+
+  <Tab title="View Details">
+    You can view any expense you're involved in (either as payer or split member):
+
+    ```javascript
+    // Backend: routes/expenses.js:108-110
+    const isInvolved = expense.splitAmong.some(
+      user => user._id.toString() === req.user.id
+    ) || expense.paidBy._id.toString() === req.user.id;
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Be Descriptive" icon="pen">
+    Use clear descriptions like "Costco grocery run - January" instead of just "Groceries"
+  </Card>
+  
+  <Card title="Add Expenses Promptly" icon="clock">
+    Record expenses as they happen to avoid forgetting details
+  </Card>
+  
+  <Card title="Check Split Members" icon="users">
+    Double-check who should be included before submitting
+  </Card>
+  
+  <Card title="Round Carefully" icon="calculator">
+    BillBuddy handles decimal amounts, but be mindful of currency precision
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<Card title="Settling Debts" icon="handshake" href="/guides/settling-debts">
+  Learn how to settle up and view optimized payment transactions
+</Card>

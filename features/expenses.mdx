@@ -1,0 +1,523 @@
+---
+title: 'Expenses'
+description: 'Track and split expenses among group members with flexible categories'
+icon: 'receipt'
+---
+
+## Overview
+
+Expenses are the core transactions in BillBuddy. They represent money spent by one person that needs to be split among multiple group members. Each expense is categorized, tracked, and automatically calculated to determine how much each person owes.
+
+## Expense Model
+
+The Expense model is defined in `backend/models/Expense.js:3-39`:
+
+```javascript Expense Schema
+const ExpenseSchema = new mongoose.Schema({
+  description: {
+    type: String,
+    required: [true, 'Please provide a description'],
+    trim: true,
+    maxlength: [100, 'Description cannot be more than 100 characters']
+  },
+  amount: {
+    type: Number,
+    required: [true, 'Please provide an amount'],
+    min: [0, 'Amount cannot be negative']
+  },
+  paidBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  splitAmong: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }],
+  group: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Group',
+    required: true
+  },
+  date: {
+    type: Date,
+    default: Date.now
+  },
+  category: {
+    type: String,
+    enum: ['Food', 'Travel', 'Shopping', 'Entertainment', 'Utilities', 'Other'],
+    default: 'Other'
+  }
+});
+```
+
+## Expense Categories
+
+<CardGroup cols={3}>
+  <Card title="Food" icon="utensils">
+    Restaurants, groceries, and food delivery
+  </Card>
+  <Card title="Travel" icon="plane">
+    Transportation, hotels, and trip costs
+  </Card>
+  <Card title="Shopping" icon="cart-shopping">
+    Retail purchases and household items
+  </Card>
+  <Card title="Entertainment" icon="film">
+    Movies, concerts, and leisure activities
+  </Card>
+  <Card title="Utilities" icon="bolt">
+    Electricity, water, internet, and bills
+  </Card>
+  <Card title="Other" icon="ellipsis">
+    Miscellaneous expenses (default)
+  </Card>
+</CardGroup>
+
+## How Expense Splitting Works
+
+BillBuddy uses equal splitting for all expenses. The total amount is divided equally among all members in the `splitAmong` array.
+
+<Steps>
+  <Step title="Someone Pays">
+    One person pays the full amount of an expense (tracked in `paidBy` field)
+  </Step>
+  <Step title="Split Calculation">
+    The amount is divided equally by the number of people in `splitAmong`
+  </Step>
+  <Step title="Balance Update">
+    The payer's balance increases, and each person's balance decreases by their share
+  </Step>
+</Steps>
+
+**Example:**
+If Alice pays $60 for dinner and splits it among Alice, Bob, and Charlie:
+- Per person share: $60 ÷ 3 = $20
+- Alice's balance: +$60 (she paid) - $20 (her share) = +$40
+- Bob's balance: -$20
+- Charlie's balance: -$20
+
+```javascript Per Person Share Calculation
+// Method to calculate per person share
+ExpenseSchema.methods.calculatePerPersonShare = function() {
+  return this.amount / this.splitAmong.length;
+};
+```
+
+## API Endpoints
+
+### Create a New Expense
+
+<Card title="POST /api/expenses" icon="plus">
+  Add a new expense to a group. The authenticated user is automatically set as the payer.
+</Card>
+
+**Request Body:**
+```json
+{
+  "description": "Dinner at Italian restaurant",
+  "amount": 85.50,
+  "group": "507f1f77bcf86cd799439011",
+  "splitAmong": [
+    "507f1f77bcf86cd799439012",
+    "507f1f77bcf86cd799439013",
+    "507f1f77bcf86cd799439014"
+  ],
+  "category": "Food"
+}
+```
+
+**Response:**
+```json
+{
+  "_id": "507f1f77bcf86cd799439020",
+  "description": "Dinner at Italian restaurant",
+  "amount": 85.50,
+  "paidBy": "507f1f77bcf86cd799439012",
+  "splitAmong": [
+    "507f1f77bcf86cd799439012",
+    "507f1f77bcf86cd799439013",
+    "507f1f77bcf86cd799439014"
+  ],
+  "group": "507f1f77bcf86cd799439011",
+  "category": "Food",
+  "date": "2026-03-03T18:30:00.000Z"
+}
+```
+
+**Implementation** (from `backend/routes/expenses.js:34-60`):
+```javascript
+router.post('/', protect, async (req, res) => {
+  try {
+    const { description, amount, group, splitAmong, category } = req.body;
+
+    // Create new expense
+    const expense = new Expense({
+      description,
+      amount,
+      paidBy: req.user.id, // Automatically set to current user
+      group,
+      splitAmong,
+      category
+    });
+
+    await expense.save();
+
+    // Add expense to group
+    await Group.findByIdAndUpdate(group, {
+      $push: { expenses: expense._id }
+    });
+
+    res.status(201).json(expense);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+```
+
+<Info>
+  When an expense is created, it's automatically added to the group's expense list, making it immediately visible to all group members.
+</Info>
+
+### Get Recent Expenses
+
+<Card title="GET /api/expenses/recent" icon="clock">
+  Retrieve the 10 most recent expenses where the user either paid or is splitting the cost.
+</Card>
+
+**Response:**
+```json
+[
+  {
+    "_id": "507f1f77bcf86cd799439020",
+    "description": "Dinner at Italian restaurant",
+    "amount": 85.50,
+    "paidBy": {
+      "_id": "507f1f77bcf86cd799439012",
+      "name": "Alice Smith",
+      "email": "alice@example.com"
+    },
+    "splitAmong": [
+      {
+        "_id": "507f1f77bcf86cd799439012",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+      },
+      {
+        "_id": "507f1f77bcf86cd799439013",
+        "name": "Bob Jones",
+        "email": "bob@example.com"
+      }
+    ],
+    "group": {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "Roommates 2026"
+    },
+    "category": "Food",
+    "date": "2026-03-03T18:30:00.000Z"
+  }
+]
+```
+
+### Get Expenses by Group
+
+<Card title="GET /api/expenses/group/:groupId" icon="folder-open">
+  Retrieve all expenses for a specific group, sorted by date (newest first).
+</Card>
+
+**Response:**
+Returns an array of expense objects with populated user and group information.
+
+**Authorization:**
+- Only group members can view group expenses
+- Returns 403 error if user is not a member
+
+**Implementation** (from `backend/routes/expenses.js:65-92`):
+```javascript
+router.get('/group/:groupId', protect, async (req, res) => {
+  try {
+    const group = await Group.findById(req.params.groupId);
+
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    // Check if user is a member of the group
+    const isMember = group.members.some(
+      member => member.user.toString() === req.user.id
+    );
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Not authorized to access this group' });
+    }
+
+    const expenses = await Expense.find({ group: req.params.groupId })
+      .populate('paidBy', 'name email')
+      .populate('splitAmong', 'name email')
+      .sort('-date'); // Sort by date descending
+
+    res.json(expenses);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+```
+
+### Get Single Expense
+
+<Card title="GET /api/expenses/:id" icon="file-invoice">
+  Retrieve detailed information about a specific expense.
+</Card>
+
+**Response:**
+```json
+{
+  "_id": "507f1f77bcf86cd799439020",
+  "description": "Dinner at Italian restaurant",
+  "amount": 85.50,
+  "paidBy": {
+    "_id": "507f1f77bcf86cd799439012",
+    "name": "Alice Smith",
+    "email": "alice@example.com"
+  },
+  "splitAmong": [...],
+  "group": "507f1f77bcf86cd799439011",
+  "category": "Food",
+  "date": "2026-03-03T18:30:00.000Z"
+}
+```
+
+<Warning>
+  Only users involved in the expense (either as the payer or in the split) can view expense details. Others will receive a 403 Forbidden error.
+</Warning>
+
+### Update Expense
+
+<Card title="PUT /api/expenses/:id" icon="pen-to-square">
+  Update an existing expense. Only the person who paid can update it.
+</Card>
+
+**Request Body:**
+```json
+{
+  "description": "Updated dinner description",
+  "amount": 90.00,
+  "splitAmong": [
+    "507f1f77bcf86cd799439012",
+    "507f1f77bcf86cd799439013"
+  ],
+  "category": "Entertainment"
+}
+```
+
+<Note>
+  The `paidBy`, `group`, and `date` fields cannot be changed after creation.
+</Note>
+
+### Delete Expense
+
+<Card title="DELETE /api/expenses/:id" icon="trash">
+  Delete an expense permanently. Only the person who paid can delete it.
+</Card>
+
+**Response:**
+```json
+{
+  "message": "Expense removed"
+}
+```
+
+**Implementation** (from `backend/routes/expenses.js:159-184`):
+```javascript
+router.delete('/:id', protect, async (req, res) => {
+  try {
+    const expense = await Expense.findById(req.params.id);
+
+    if (!expense) {
+      return res.status(404).json({ message: 'Expense not found' });
+    }
+
+    // Check if user is the one who paid
+    if (expense.paidBy.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized to delete this expense' });
+    }
+
+    // Remove expense from group
+    await Group.findByIdAndUpdate(expense.group, {
+      $pull: { expenses: expense._id }
+    });
+
+    await expense.remove();
+
+    res.json({ message: 'Expense removed' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+```
+
+## Example Usage
+
+<Tabs>
+  <Tab title="Add Expense">
+    ```javascript
+    const token = localStorage.getItem('token');
+
+    const response = await fetch('/api/expenses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        description: 'Grocery shopping',
+        amount: 142.50,
+        group: '507f1f77bcf86cd799439011',
+        splitAmong: [
+          '507f1f77bcf86cd799439012', // Me
+          '507f1f77bcf86cd799439013', // Alice
+          '507f1f77bcf86cd799439014'  // Bob
+        ],
+        category: 'Shopping'
+      })
+    });
+
+    const expense = await response.json();
+    console.log('Expense created:', expense);
+    console.log('Per person share:', expense.amount / 3);
+    ```
+  </Tab>
+  <Tab title="Get Group Expenses">
+    ```javascript
+    const token = localStorage.getItem('token');
+    const groupId = '507f1f77bcf86cd799439011';
+
+    const response = await fetch(`/api/expenses/group/${groupId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const expenses = await response.json();
+    
+    // Calculate total spent
+    const totalSpent = expenses.reduce((sum, exp) => sum + exp.amount, 0);
+    console.log('Total group expenses:', totalSpent);
+    
+    // Group by category
+    const byCategory = expenses.reduce((acc, exp) => {
+      acc[exp.category] = (acc[exp.category] || 0) + exp.amount;
+      return acc;
+    }, {});
+    console.log('Expenses by category:', byCategory);
+    ```
+  </Tab>
+  <Tab title="Update Expense">
+    ```javascript
+    const token = localStorage.getItem('token');
+    const expenseId = '507f1f77bcf86cd799439020';
+
+    const response = await fetch(`/api/expenses/${expenseId}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        description: 'Updated description',
+        amount: 150.00,
+        category: 'Food'
+      })
+    });
+
+    const updatedExpense = await response.json();
+    console.log('Expense updated:', updatedExpense);
+    ```
+  </Tab>
+</Tabs>
+
+## Permission System
+
+<AccordionGroup>
+  <Accordion title="Who Can Create Expenses">
+    Any group member can create an expense. The authenticated user is automatically set as the payer.
+  </Accordion>
+
+  <Accordion title="Who Can View Expenses">
+    Users can view expenses if:
+    - They are the payer (`paidBy`)
+    - They are included in the split (`splitAmong`)
+    - They are viewing expenses for a group they're a member of
+  </Accordion>
+
+  <Accordion title="Who Can Update Expenses">
+    Only the user who paid for the expense can update it. This prevents others from modifying expense details that affect the payer's balance.
+  </Accordion>
+
+  <Accordion title="Who Can Delete Expenses">
+    Only the user who paid for the expense can delete it. When deleted, the expense is also removed from the group's expense list.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Clear Descriptions" icon="message">
+    Use descriptive names like "Grocery shopping - Whole Foods" instead of just "Shopping"
+  </Card>
+  <Card title="Proper Categories" icon="tags">
+    Select the most appropriate category to help with expense tracking and analysis
+  </Card>
+  <Card title="Include Everyone" icon="users">
+    Make sure to include all people who benefited from the expense in the `splitAmong` array
+  </Card>
+  <Card title="Verify Amounts" icon="calculator">
+    Double-check amounts before creating expenses, as they affect everyone's balances
+  </Card>
+</CardGroup>
+
+## Error Handling
+
+| Status Code | Message | Cause |
+|-------------|---------|-------|
+| 400 | Amount cannot be negative | Negative expense amount |
+| 403 | Not authorized to access this group | Non-member trying to view group expenses |
+| 403 | Not authorized to access this expense | Non-involved user trying to view expense |
+| 403 | Not authorized to update this expense | Non-payer trying to update |
+| 403 | Not authorized to delete this expense | Non-payer trying to delete |
+| 404 | Expense not found | Invalid expense ID |
+| 404 | Group not found | Invalid group ID |
+| 500 | Server error | Internal server error |
+
+## Understanding Balance Impact
+
+When you create an expense, here's how it affects balances:
+
+```javascript
+// Example: Alice pays $90 for dinner split among Alice, Bob, and Charlie
+
+Expense:
+- Amount: $90
+- Paid by: Alice
+- Split among: [Alice, Bob, Charlie]
+
+Calculations:
+- Per person share: $90 / 3 = $30
+
+Balance changes:
+- Alice: +$90 (paid) - $30 (her share) = +$60 (owed by others)
+- Bob: -$30 (owes Alice)
+- Charlie: -$30 (owes Alice)
+
+Net result:
+- Bob and Charlie each owe $30
+- Alice is owed $60 total ($30 from Bob + $30 from Charlie)
+```
+
+<Tip>
+  If you're the payer and you want to exclude yourself from the split, simply don't include your user ID in the `splitAmong` array. This is useful for expenses you're covering entirely for others.
+</Tip>

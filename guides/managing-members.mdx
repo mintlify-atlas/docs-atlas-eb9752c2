@@ -1,0 +1,518 @@
+---
+title: Managing Group Members
+description: Learn how to add, view, and manage members in your BillBuddy groups
+---
+
+Group members are the foundation of expense sharing in BillBuddy. This guide covers everything you need to know about managing who's in your groups and their permissions.
+
+## Member Roles and Permissions
+
+BillBuddy has a simple permission model:
+
+<CardGroup cols={2}>
+  <Card title="Group Creator" icon="crown">
+    The user who created the group has special permissions:
+    - Add new members
+    - Update group details
+    - Delete the group
+  </Card>
+  
+  <Card title="Group Members" icon="user">
+    All members (including the creator) can:
+    - Add expenses
+    - View all expenses and balances
+    - Initiate settlements
+  </Card>
+</CardGroup>
+
+<Note>
+  Currently, only the group creator can add new members. Regular members cannot invite others.
+</Note>
+
+## Adding Members to a Group
+
+<Steps>
+  <Step title="Navigate to Your Group">
+    Go to the group page where you want to add a member. You must be the **group creator** to add members.
+
+    You'll see an **"Add Member"** button in the top-right section of the group page.
+
+    ```jsx
+    // Source: Group.jsx:163-164
+    <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleAddMember}>
+      Add Member
+    </Button>
+    ```
+  </Step>
+
+  <Step title="Click Add Member">
+    Click the **"Add Member"** button to navigate to the add member form at `/add-member/:groupId`.
+
+    ```jsx
+    // Source: Group.jsx:132
+    const handleAddMember = () => navigate(`/add-member/${id}`);
+    ```
+  </Step>
+
+  <Step title="Enter Member Email">
+    Enter the email address of the person you want to add:
+
+    <ParamField path="email" type="string" required>
+      The email address of the new member
+      
+      Must be a valid email format. The user must already be registered in BillBuddy.
+    </ParamField>
+
+    ```jsx
+    // Source: AddMember.jsx:95-105
+    <TextField
+      fullWidth
+      label="Member Email"
+      variant="outlined"
+      value={email}
+      onChange={(e) => setEmail(e.target.value)}
+      margin="normal"
+      required
+      type="email"
+      disabled={loading}
+    />
+    ```
+
+    <Warning>
+      Unlike group creation, adding members to existing groups requires the user to already have a BillBuddy account. If they don't exist, you'll see an error: "User not found".
+    </Warning>
+  </Step>
+
+  <Step title="Submit">
+    Click **"Add Member"** to add them to the group.
+
+    The backend will:
+    1. Verify you're the group creator
+    2. Find the user by email
+    3. Check they're not already a member
+    4. Add them with a starting balance of ₹0
+    5. Update their groups list
+
+    ```javascript
+    // Backend: routes/groups.js:194-249
+    router.post('/:id/members', protect, async (req, res) => {
+      const { email } = req.body;
+      const group = await Group.findById(req.params.id);
+      
+      // Check if user is the creator
+      if (group.createdBy.toString() !== req.user.id) {
+        return res.status(403).json({ 
+          message: 'Not authorized to add members to this group' 
+        });
+      }
+      
+      // Find user by email
+      const userToAdd = await User.findOne({ email });
+      if (!userToAdd) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+      
+      // Check if already a member
+      const isAlreadyMember = group.members.some(
+        member => member.user.toString() === userToAdd._id.toString()
+      );
+      if (isAlreadyMember) {
+        return res.status(400).json({ 
+          message: 'User is already a member of this group' 
+        });
+      }
+      
+      // Add to group
+      group.members.push({ user: userToAdd._id, balance: 0 });
+      await group.save();
+      
+      // Add group to user's groups array
+      await User.findByIdAndUpdate(userToAdd._id, {
+        $push: { groups: group._id }
+      });
+    });
+    ```
+
+    On success, you'll see a confirmation message and be redirected back to the group page after 1.5 seconds.
+
+    ```jsx
+    // Source: AddMember.jsx:44-48
+    setSuccess('Member added successfully!');
+    setEmail('');
+    setTimeout(() => {
+      navigate(`/group/${id}`);
+    }, 1500);
+    ```
+  </Step>
+</Steps>
+
+## Viewing Group Members
+
+Members are displayed on the group page as colorful chips showing their current balance:
+
+```jsx
+// Source: Group.jsx:174-183
+<Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+  {group.members.map((member) => (
+    <Chip
+      avatar={<Avatar>{member.user.name[0]}</Avatar>}
+      label={`${member.user.name} (₹${balances[member.user._id]?.toFixed(2) || '0.00'})`}
+      color={balances[member.user._id] > 0 ? 'success' : 
+             balances[member.user._id] < 0 ? 'error' : 'default'}
+    />
+  ))}
+</Box>
+```
+
+### Understanding Member Chips
+
+<Tabs>
+  <Tab title="Green Chip">
+    **Positive Balance** - This member is owed money
+
+    ```
+    Alice (₹250.00) 🟢
+    ```
+
+    Alice has paid more than her share and should receive ₹250 from other members.
+  </Tab>
+
+  <Tab title="Red Chip">
+    **Negative Balance** - This member owes money
+
+    ```
+    Bob (-₹125.50) 🔴
+    ```
+
+    Bob owes ₹125.50 to other members who have covered his expenses.
+  </Tab>
+
+  <Tab title="Gray Chip">
+    **Zero Balance** - This member is settled
+
+    ```
+    Charlie (₹0.00) ⚪
+    ```
+
+    Charlie's expenses are balanced with what they've paid.
+  </Tab>
+</Tabs>
+
+## Member Data Structure
+
+Each member in a group has the following structure:
+
+```javascript
+// Source: models/Group.js:14-24
+members: [{
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  balance: {
+    type: Number,
+    default: 0
+  }
+}]
+```
+
+<Info>
+  The `balance` field in the member object is currently not actively used. Instead, balances are calculated dynamically from expenses each time the group is loaded.
+</Info>
+
+## Adding Members During Group Creation
+
+You can add multiple members when first creating a group:
+
+```jsx
+// Source: CreateGroup.jsx:37-66
+const handleAddMember = () => {
+  if (!validateEmail(memberEmail)) {
+    setError('Please enter a valid email address');
+    return;
+  }
+  
+  if (formData.members.includes(memberEmail)) {
+    setError('This member is already added');
+    return;
+  }
+  
+  setFormData({
+    ...formData,
+    members: [...formData.members, memberEmail],
+  });
+};
+
+const handleRemoveMember = (email) => {
+  setFormData({
+    ...formData,
+    members: formData.members.filter((m) => m !== email),
+  });
+};
+```
+
+During creation:
+- You can add unlimited members
+- Members are displayed as removable chips
+- Users are auto-created if they don't exist
+- At least one member is required
+
+See the [Creating Groups](/guides/creating-groups) guide for more details.
+
+## API Request Examples
+
+<CodeGroup>
+```javascript Add Member Request
+POST /api/groups/:groupId/members
+Authorization: Bearer <token>
+
+{
+  "email": "[email protected]"
+}
+```
+
+```javascript Success Response
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "Apartment 4B",
+  "description": "Monthly expenses",
+  "members": [
+    {
+      "user": {
+        "_id": "507f191e810c19729de860ea",
+        "name": "Alice",
+        "email": "[email protected]"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f191e810c19729de860eb",
+        "name": "Bob",
+        "email": "[email protected]"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f191e810c19729de860ec",
+        "name": "Charlie",
+        "email": "[email protected]"
+      },
+      "balance": 0
+    }
+  ],
+  "createdBy": {
+    "_id": "507f191e810c19729de860ea",
+    "name": "Alice",
+    "email": "[email protected]"
+  },
+  "isSettled": false
+}
+```
+
+```javascript Error: User Not Found
+{
+  "message": "User not found"
+}
+```
+
+```javascript Error: Already a Member
+{
+  "message": "User is already a member of this group"
+}
+```
+
+```javascript Error: Not Authorized
+{
+  "message": "Not authorized to add members to this group"
+}
+```
+</CodeGroup>
+
+## Permission Checks
+
+The backend enforces strict permission checks:
+
+<AccordionGroup>
+  <Accordion title="Who can add members?">
+    ```javascript
+    // Source: routes/groups.js:210-212
+    if (group.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        message: 'Not authorized to add members to this group' 
+      });
+    }
+    ```
+
+    Only the user who created the group (`createdBy`) can add new members.
+  </Accordion>
+
+  <Accordion title="Who can update group details?">
+    ```javascript
+    // Source: routes/groups.js:122-124
+    if (group.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        message: 'Not authorized to update this group' 
+      });
+    }
+    ```
+
+    Only the group creator can update the name, description, or member list.
+  </Accordion>
+
+  <Accordion title="Who can delete a group?">
+    ```javascript
+    // Source: routes/groups.js:172-174
+    if (group.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ 
+        message: 'Not authorized to delete this group' 
+      });
+    }
+    ```
+
+    Only the group creator can delete the group.
+  </Accordion>
+
+  <Accordion title="Who can view group details?">
+    ```javascript
+    // Source: routes/groups.js:93-98
+    const isMember = group.members.some(
+      member => member.user._id.toString() === req.user.id
+    );
+    
+    if (!isMember) {
+      return res.status(403).json({ 
+        message: 'Not authorized to access this group' 
+      });
+    }
+    ```
+
+    Any member of the group can view its details, expenses, and balances.
+  </Accordion>
+</AccordionGroup>
+
+## Removing Members
+
+<Warning>
+  The current implementation does **not** support removing individual members from a group through the UI or dedicated API endpoint.
+</Warning>
+
+To remove members, you would need to:
+
+1. Use the group update endpoint (`PUT /api/groups/:id`) to replace the entire member list
+2. Manually update the database
+3. Delete and recreate the group
+
+This is a potential feature for future development.
+
+## Member Impact on Expenses
+
+When you add a new member to a group:
+
+<Tabs>
+  <Tab title="Existing Expenses">
+    **New members are NOT retroactively added to existing expenses**
+
+    ```
+    Before adding Dave:
+    - Expense 1: Split between Alice, Bob, Charlie
+    - Expense 2: Split between Alice, Bob
+    
+    After adding Dave:
+    - Expense 1: Still split between Alice, Bob, Charlie
+    - Expense 2: Still split between Alice, Bob
+    - Expense 3 (new): Can include Dave
+    ```
+
+    New members start with a ₹0 balance and only participate in expenses added after they join.
+  </Tab>
+
+  <Tab title="Future Expenses">
+    **New members can be included in any future expense**
+
+    When adding an expense, the "Split Between" dropdown will include all current members:
+
+    ```jsx
+    // Source: AddExpense.jsx:159-163
+    {group.members.map((member) => (
+      <MenuItem key={member.user._id} value={member.user._id}>
+        {member.user.name}
+      </MenuItem>
+    ))}
+    ```
+
+    By default, all members (including new ones) are selected for split.
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Add Members Early" icon="clock">
+    Add all expected members before recording expenses to avoid confusion about who should be included in splits.
+  </Card>
+  
+  <Card title="Verify Email Addresses" icon="envelope">
+    Double-check email addresses before adding. Incorrect emails will result in "User not found" errors.
+  </Card>
+  
+  <Card title="Communicate Changes" icon="comments">
+    Let existing members know when you add someone new, especially if it affects how future expenses should be split.
+  </Card>
+  
+  <Card title="Check Permissions" icon="shield">
+    Remember that only group creators can add members. If you need to add someone and you're not the creator, ask the creator to do it.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: 'User not found'">
+    The email address you entered doesn't match any registered BillBuddy user. 
+    
+    **Solutions:**
+    - Ask them to create a BillBuddy account first
+    - Double-check the email for typos
+    - Use a different email they may have registered with
+  </Accordion>
+
+  <Accordion title="Error: 'User is already a member'">
+    The user you're trying to add is already in the group.
+    
+    Check the member chips on the group page to see all current members.
+  </Accordion>
+
+  <Accordion title="Error: 'Not authorized to add members'">
+    Only the group creator can add members. If you didn't create the group, you cannot add new members.
+    
+    Contact the group creator and ask them to add the member.
+  </Accordion>
+
+  <Accordion title="Can't see 'Add Member' button">
+    The "Add Member" button only appears if:
+    1. You are logged in
+    2. You are the group creator
+    3. You're on the group detail page
+    
+    If you're not the creator, you won't see this button.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Expenses" icon="receipt" href="/guides/adding-expenses">
+    Start tracking shared expenses with your group members
+  </Card>
+  
+  <Card title="View Balances" icon="scale-balanced" href="/guides/settling-debts">
+    Learn how member balances are calculated and settled
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/groups">
+    View the complete API documentation for member management
+  </Card>
+</CardGroup>

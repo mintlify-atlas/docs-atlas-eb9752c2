@@ -1,0 +1,346 @@
+---
+title: 'Settlements'
+description: 'Settlement creation and management endpoints'
+---
+
+<Note>
+  All settlement endpoints require authentication. Include the JWT token in the Authorization header.
+</Note>
+
+## Create Settlement
+
+<api method="POST" path="/api/settlements" auth="bearer" />
+
+Create a new settlement for a group. This calculates the minimum number of transactions needed to settle all debts and marks the group as settled.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Request Body
+
+<ParamField body="group" type="string" required>
+  Group ID to create settlement for
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Confirmation message
+</ResponseField>
+
+<ResponseField name="settlement" type="object">
+  Settlement object containing transaction details
+  <Expandable title="Settlement object structure">
+    <ResponseField name="_id" type="string">
+      Settlement's unique identifier
+    </ResponseField>
+    <ResponseField name="group" type="string">
+      Group ID
+    </ResponseField>
+    <ResponseField name="type" type="string">
+      Settlement type (always "group" for this endpoint)
+    </ResponseField>
+    <ResponseField name="status" type="string">
+      Settlement status: `pending`, `completed`, or `cancelled`
+    </ResponseField>
+    <ResponseField name="createdBy" type="string">
+      User ID of the person who created the settlement
+    </ResponseField>
+    <ResponseField name="summary" type="array">
+      Array of transaction objects showing who should pay whom
+      <Expandable title="Transaction object">
+        <ResponseField name="from" type="object">
+          User object (debtor) with _id and name
+        </ResponseField>
+        <ResponseField name="to" type="object">
+          User object (creditor) with _id and name
+        </ResponseField>
+        <ResponseField name="amount" type="number">
+          Amount to be transferred
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+    <ResponseField name="createdAt" type="string">
+      ISO 8601 timestamp
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X POST https://api.billbuddy.com/api/settlements \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "group": "507f191e810c19729de860ea"
+  }'
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "message": "Group settled successfully",
+  "settlement": {
+    "_id": "507f191e810c19729de860ed",
+    "group": "507f191e810c19729de860ea",
+    "type": "group",
+    "status": "completed",
+    "createdBy": "507f1f77bcf86cd799439011",
+    "summary": [
+      {
+        "from": {
+          "_id": "507f1f77bcf86cd799439012",
+          "name": "Alice Smith"
+        },
+        "to": {
+          "_id": "507f1f77bcf86cd799439011",
+          "name": "John Doe"
+        },
+        "amount": 75.25
+      },
+      {
+        "from": {
+          "_id": "507f1f77bcf86cd799439013",
+          "name": "Bob Johnson"
+        },
+        "to": {
+          "_id": "507f1f77bcf86cd799439011",
+          "name": "John Doe"
+        },
+        "amount": 50.00
+      }
+    ],
+    "createdAt": "2024-01-15T16:00:00.000Z"
+  }
+}
+```
+
+<Info>
+  The settlement algorithm calculates the minimum number of transactions needed to settle all debts in the group. This may result in fewer transactions than the actual number of expenses.
+</Info>
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 400 Bad Request
+{
+  "message": "This group has already been settled."
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to settle this group"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "message": "Server error"
+}
+```
+
+---
+
+## Get Group Settlements
+
+<api method="GET" path="/api/settlements/group/:groupId" auth="bearer" />
+
+Retrieve all settlements for a specific group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="groupId" type="string" required>
+  Group ID
+</ParamField>
+
+### Response
+
+Returns an array of settlement objects with populated user information.
+
+### Example Request
+
+```bash cURL
+curl -X GET https://api.billbuddy.com/api/settlements/group/507f191e810c19729de860ea \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+[
+  {
+    "_id": "507f191e810c19729de860ed",
+    "group": "507f191e810c19729de860ea",
+    "type": "group",
+    "status": "completed",
+    "createdBy": {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com"
+    },
+    "summary": [
+      {
+        "from": {
+          "_id": "507f1f77bcf86cd799439012",
+          "name": "Alice Smith"
+        },
+        "to": {
+          "_id": "507f1f77bcf86cd799439011",
+          "name": "John Doe"
+        },
+        "amount": 75.25
+      }
+    ],
+    "createdAt": "2024-01-15T16:00:00.000Z"
+  }
+]
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "message": "Server error"
+}
+```
+
+---
+
+## Update Settlement Status
+
+<api method="PUT" path="/api/settlements/:id/status" auth="bearer" />
+
+Update the status of a settlement. Only the person who created the settlement can update its status.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Settlement ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="status" type="string" required>
+  New settlement status. Options: `pending`, `completed`, `cancelled`
+</ParamField>
+
+### Response
+
+Returns the updated settlement object.
+
+### Example Request
+
+```bash cURL
+curl -X PUT https://api.billbuddy.com/api/settlements/507f191e810c19729de860ed/status \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "completed"
+  }'
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "_id": "507f191e810c19729de860ed",
+  "group": "507f191e810c19729de860ea",
+  "type": "group",
+  "status": "completed",
+  "createdBy": "507f1f77bcf86cd799439011",
+  "summary": [
+    {
+      "from": "507f1f77bcf86cd799439012",
+      "to": "507f1f77bcf86cd799439011",
+      "amount": 75.25
+    }
+  ],
+  "createdAt": "2024-01-15T16:00:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Settlement not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "message": "Server error"
+}
+```
+
+---
+
+## Understanding Settlement Calculations
+
+<Info>
+  **How the settlement algorithm works:**
+  
+  1. **Calculate Balances**: For each member, calculate total amount paid minus total amount owed
+  2. **Identify Creditors and Debtors**: Positive balances are creditors (owed money), negative balances are debtors (owe money)
+  3. **Minimize Transactions**: Use a greedy algorithm to match the largest debtor with the largest creditor
+  4. **Generate Summary**: Create a list of transactions that settles all debts with minimum transfers
+</Info>
+
+### Example Scenario
+
+Imagine a group of 3 people with these expenses:
+- John paid $150 for groceries (split 3 ways)
+- Alice paid $90 for gas (split 3 ways)
+- Bob paid $60 for supplies (split 3 ways)
+
+**Balances:**
+- John: +$150 - $100 = +$50 (owed $50)
+- Alice: +$90 - $100 = -$10 (owes $10)
+- Bob: +$60 - $100 = -$40 (owes $40)
+
+**Settlement transactions:**
+- Bob pays John $40
+- Alice pays John $10
+
+**Result:** All debts settled with just 2 transactions instead of potentially 6.

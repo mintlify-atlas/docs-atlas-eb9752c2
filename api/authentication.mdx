@@ -1,0 +1,353 @@
+---
+title: 'Authentication'
+description: 'Learn how to authenticate with the BillBuddy API using JWT tokens'
+---
+
+## Overview
+
+The BillBuddy API uses **JSON Web Tokens (JWT)** for authentication. After registering or logging in, you'll receive a token that must be included in the `Authorization` header for all protected endpoints.
+
+## Authentication Flow
+
+<Steps>
+  <Step title="Register or Login">
+    Create a new account with `/api/auth/register` or login with existing credentials using `/api/auth/login`.
+  </Step>
+  
+  <Step title="Receive JWT Token">
+    Upon successful authentication, you'll receive a JWT token in the response.
+  </Step>
+  
+  <Step title="Include Token in Requests">
+    Add the token to the `Authorization` header as a Bearer token for all protected endpoints.
+  </Step>
+</Steps>
+
+## Register a New User
+
+Create a new user account and receive an authentication token.
+
+**Endpoint:** `POST /api/auth/register`
+
+**Access:** Public
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  User's full name (max 50 characters)
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  Valid email address (must be unique)
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password (minimum 6 characters)
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "password": "mypassword123"
+  }'
+```
+
+### Response
+
+**Success (201 Created):**
+
+<ResponseField name="success" type="boolean">
+  Indicates successful registration
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  JWT authentication token (expires in 30 days)
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY1YTVkMzIxZjc4OTBhYmNkZWYxMjM0NSIsImlhdCI6MTcwNTMxNzYwMSwiZXhwIjoxNzA3OTA5NjAxfQ.Xj4kR8pQ2vN9mK3sL7tY6uZ1wA5bC9dE2fG3hI4jK5l"
+}
+```
+
+**Error (400 Bad Request):**
+
+```json
+{
+  "message": "User already exists"
+}
+```
+
+## Login
+
+Authenticate with existing credentials and receive a token.
+
+**Endpoint:** `POST /api/auth/login`
+
+**Access:** Public
+
+### Request Body
+
+<ParamField body="email" type="string" required>
+  User's email address
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X POST http://localhost:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "mypassword123"
+  }'
+```
+
+### Response
+
+**Success (200 OK):**
+
+<ResponseField name="success" type="boolean">
+  Indicates successful login
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  JWT authentication token (expires in 30 days)
+</ResponseField>
+
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY1YTVkMzIxZjc4OTBhYmNkZWYxMjM0NSIsImlhdCI6MTcwNTMxNzYwMSwiZXhwIjoxNzA3OTA5NjAxfQ.Xj4kR8pQ2vN9mK3sL7tY6uZ1wA5bC9dE2fG3hI4jK5l"
+}
+```
+
+**Error (400 Bad Request):**
+
+```json
+{
+  "message": "Invalid credentials"
+}
+```
+
+## Get Current User
+
+Retrieve the authenticated user's profile information.
+
+**Endpoint:** `GET /api/auth/me`
+
+**Access:** Private (requires authentication)
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token obtained from login or registration
+</ParamField>
+
+### Example Request
+
+```bash
+curl -X GET http://localhost:5000/api/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Response
+
+**Success (200 OK):**
+
+<ResponseField name="_id" type="string">
+  User's unique identifier
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  User's full name
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User's email address
+</ResponseField>
+
+<ResponseField name="groups" type="array">
+  Array of group IDs the user belongs to
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp of account creation
+</ResponseField>
+
+```json
+{
+  "_id": "65a5d321f7890abcdef12345",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "groups": [
+    "65a5d456f7890abcdef12346",
+    "65a5d567f7890abcdef12347"
+  ],
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+**Error (401 Unauthorized):**
+
+```json
+{
+  "message": "Not authorized, no token"
+}
+```
+
+## Using Authentication Tokens
+
+### Token Format
+
+Tokens must be sent in the `Authorization` header using the Bearer authentication scheme:
+
+```
+Authorization: Bearer <token>
+```
+
+### Token Expiration
+
+JWT tokens expire after **30 days**. The expiration time is encoded in the token payload:
+
+```json
+{
+  "id": "65a5d321f7890abcdef12345",
+  "iat": 1705317601,
+  "exp": 1707909601
+}
+```
+
+- `iat`: Issued at timestamp
+- `exp`: Expiration timestamp
+
+### Token Verification
+
+The API verifies tokens on protected endpoints using the following process:
+
+1. Extracts the token from the `Authorization` header
+2. Verifies the token signature using the JWT secret
+3. Decodes the user ID from the token payload
+4. Fetches the user from the database (excluding password)
+5. Attaches the user object to `req.user` for use in route handlers
+
+See the implementation in `/backend/middleware/auth.js:4-31`.
+
+## Protected Routes
+
+The following endpoints require authentication:
+
+### Authentication
+- `GET /api/auth/me` - Get current user profile
+
+### Groups
+- `POST /api/groups` - Create a group
+- `GET /api/groups` - List user's groups
+- `GET /api/groups/:id` - Get group details
+- `PUT /api/groups/:id` - Update group
+- `DELETE /api/groups/:id` - Delete group
+- `POST /api/groups/:id/members` - Add member to group
+
+### Expenses
+- `GET /api/expenses/recent` - Get recent expenses
+- `POST /api/expenses` - Create an expense
+- `GET /api/expenses/group/:groupId` - List group expenses
+- `GET /api/expenses/:id` - Get expense details
+- `PUT /api/expenses/:id` - Update expense
+- `DELETE /api/expenses/:id` - Delete expense
+
+### Settlements
+- `POST /api/settlements` - Create a settlement
+- `GET /api/settlements/group/:groupId` - List group settlements
+- `PUT /api/settlements/:id/status` - Update settlement status
+
+## Authentication Errors
+
+### Missing Token
+
+When no token is provided:
+
+```json
+{
+  "message": "Not authorized, no token"
+}
+```
+
+**Status Code:** 401 Unauthorized
+
+### Invalid Token
+
+When the token is malformed, expired, or has an invalid signature:
+
+```json
+{
+  "message": "Not authorized"
+}
+```
+
+**Status Code:** 401 Unauthorized
+
+## Security Best Practices
+
+<Warning>
+  Never commit your JWT secret to version control. Use environment variables to store sensitive configuration.
+</Warning>
+
+<Tip>
+  Store tokens securely on the client side using:
+  - HttpOnly cookies for web applications
+  - Secure storage APIs for mobile apps
+  - Never store tokens in localStorage if XSS is a concern
+</Tip>
+
+## Complete Authentication Example
+
+Here's a complete workflow from registration to making authenticated requests:
+
+### Step 1: Register
+
+```bash
+curl -X POST http://localhost:5000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Jane Smith",
+    "email": "jane@example.com",
+    "password": "securepass123"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY1YTVkOTg3ZjdkYWJjZGVmMTIzNDUiLCJpYXQiOjE3MDUzMTk3NDMsImV4cCI6MTcwNzkxMTc0M30.9sK3mN2pQ7rV8tX4uY5zA1bC6dE9fG2hI3jK4lM7nO8"
+}
+```
+
+### Step 2: Use Token in Requests
+
+```bash
+# Get your profile
+curl -X GET http://localhost:5000/api/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY1YTVkOTg3ZjdkYWJjZGVmMTIzNDUiLCJpYXQiOjE3MDUzMTk3NDMsImV4cCI6MTcwNzkxMTc0M30.9sK3mN2pQ7rV8tX4uY5zA1bC6dE9fG2hI3jK4lM7nO8"
+
+# Create a group
+curl -X POST http://localhost:5000/api/groups \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -d '{
+    "name": "Roommates",
+    "description": "Shared apartment expenses",
+    "members": [{"email": "bob@example.com"}]
+  }'
+```

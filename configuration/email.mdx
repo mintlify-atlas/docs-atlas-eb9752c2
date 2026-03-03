@@ -1,0 +1,376 @@
+---
+title: 'Email Configuration'
+description: 'Configure email service for settlement summaries and notifications'
+---
+
+## Overview
+
+BillBuddy uses email notifications to send settlement summaries to group members after expenses are settled. The application uses Web3Forms, a simple email API service, to handle email delivery.
+
+<Note>
+  While the package.json includes Nodemailer as a dependency, the current implementation uses Web3Forms for email delivery.
+</Note>
+
+## Email Service Setup
+
+### Web3Forms Configuration
+
+BillBuddy uses [Web3Forms](https://web3forms.com/) for sending emails. Web3Forms provides a simple API without requiring SMTP configuration.
+
+#### Getting Started
+
+1. Visit [Web3Forms](https://web3forms.com/)
+2. Sign up for a free account
+3. Create a new access key from your dashboard
+4. Add the access key to your environment variables
+
+### Environment Variable
+
+<ParamField path="WEB3FORMS_ACCESS_KEY" type="string" required>
+  Your Web3Forms access key for sending emails through their API.
+  
+  ```bash .env
+  WEB3FORMS_ACCESS_KEY=your_web3forms_access_key_here
+  ```
+</ParamField>
+
+## Email Implementation
+
+The email functionality is implemented in the `backend/utils/email.js` file:
+
+```javascript backend/utils/email.js
+const axios = require('axios');
+
+const sendSettlementEmail = async (group, balances) => {
+  try {
+    const members = group.members.map(member => member.user.email);
+    const subject = `Settlement Summary for ${group.name}`;
+
+    // Create email body
+    let body = `<h2>Settlement Summary for ${group.name}</h2>`;
+    body += '<h3>Final Balances:</h3><ul>';
+
+    // Add balances to email body
+    Object.entries(balances).forEach(([userId, balance]) => {
+      const member = group.members.find(m => m.user._id.toString() === userId);
+      if (member) {
+        const name = member.user.name;
+        if (balance > 0) {
+          body += `<li>${name} is owed Rs. ${balance.toFixed(2)}</li>`;
+        } else if (balance < 0) {
+          body += `<li>${name} owes Rs. ${Math.abs(balance).toFixed(2)}</li>`;
+        } else {
+          body += `<li>${name} is settled up</li>`;
+        }
+      }
+    });
+
+    body += '</ul>';
+    body += '<p>Thank you for using BillBuddy!</p>';
+
+    // Send email using Web3Forms
+    const response = await axios.post('https://api.web3forms.com/submit', {
+      access_key: process.env.WEB3FORMS_ACCESS_KEY,
+      subject,
+      from_name: 'BillBuddy',
+      from_email: 'noreply@billbuddy.com',
+      to: members.join(','),
+      body,
+      reply_to: 'noreply@billbuddy.com'
+    });
+
+    if (response.data.success) {
+      console.log('Settlement emails sent successfully');
+    } else {
+      throw new Error('Failed to send settlement emails');
+    }
+  } catch (error) {
+    console.error('Error sending settlement emails:', error);
+    throw error;
+  }
+};
+
+module.exports = {
+  sendSettlementEmail
+};
+```
+
+## Email Parameters
+
+### Web3Forms API Parameters
+
+<ParamField path="access_key" type="string" required>
+  Your Web3Forms access key from the environment variables.
+</ParamField>
+
+<ParamField path="subject" type="string" required>
+  Email subject line. Dynamically generated with the group name.
+  
+  Example: `Settlement Summary for Weekend Trip`
+</ParamField>
+
+<ParamField path="from_name" type="string" default="BillBuddy">
+  The sender name displayed in the recipient's inbox.
+</ParamField>
+
+<ParamField path="from_email" type="string" default="noreply@billbuddy.com">
+  The sender email address. This is a display address and doesn't need to exist.
+</ParamField>
+
+<ParamField path="to" type="string" required>
+  Comma-separated list of recipient email addresses. All group members receive the settlement summary.
+</ParamField>
+
+<ParamField path="body" type="string" required>
+  HTML email body containing the settlement summary with balances for all group members.
+</ParamField>
+
+<ParamField path="reply_to" type="string">
+  Email address for replies. Set to a no-reply address by default.
+</ParamField>
+
+## Settlement Email Template
+
+The settlement email includes:
+
+1. **Header:** Group name in the subject and body
+2. **Final Balances:** List showing who owes money and who is owed
+3. **Footer:** Closing message
+
+### Email Format
+
+```html
+<h2>Settlement Summary for [Group Name]</h2>
+<h3>Final Balances:</h3>
+<ul>
+  <li>[Member Name] is owed Rs. [Amount]</li>
+  <li>[Member Name] owes Rs. [Amount]</li>
+  <li>[Member Name] is settled up</li>
+</ul>
+<p>Thank you for using BillBuddy!</p>
+```
+
+### Example Email
+
+```html
+<h2>Settlement Summary for Weekend Trip</h2>
+<h3>Final Balances:</h3>
+<ul>
+  <li>John Doe is owed Rs. 250.00</li>
+  <li>Jane Smith owes Rs. 150.00</li>
+  <li>Bob Johnson owes Rs. 100.00</li>
+</ul>
+<p>Thank you for using BillBuddy!</p>
+```
+
+## Triggering Settlement Emails
+
+Emails are automatically sent when a group settlement is processed through the settlements API:
+
+```javascript backend/routes/settlements.js
+const { sendSettlementEmail } = require('../utils/email');
+
+// After calculating balances and creating settlement
+if (sendEmail) {
+  await sendSettlementEmail(group, balances);
+}
+```
+
+<Note>
+  The `sendEmail` parameter controls whether emails are sent during settlement. This allows flexibility for testing or dry-run settlements.
+</Note>
+
+## Usage Example
+
+To send settlement emails programmatically:
+
+```javascript
+const { sendSettlementEmail } = require('./utils/email');
+
+// Assuming you have a group object and balances
+const group = await Group.findById(groupId)
+  .populate('members.user', 'name email');
+
+const balances = {
+  'user_id_1': 250.00,   // User is owed Rs. 250
+  'user_id_2': -150.00,  // User owes Rs. 150
+  'user_id_3': 0         // User is settled up
+};
+
+try {
+  await sendSettlementEmail(group, balances);
+  console.log('Settlement emails sent successfully');
+} catch (error) {
+  console.error('Failed to send emails:', error);
+}
+```
+
+## Error Handling
+
+The email service includes comprehensive error handling:
+
+```javascript
+try {
+  const response = await axios.post('https://api.web3forms.com/submit', {...});
+  
+  if (response.data.success) {
+    console.log('Settlement emails sent successfully');
+  } else {
+    throw new Error('Failed to send settlement emails');
+  }
+} catch (error) {
+  console.error('Error sending settlement emails:', error);
+  throw error;
+}
+```
+
+<Warning>
+  Email failures will throw an error and should be caught by the calling function. Consider implementing retry logic for production deployments.
+</Warning>
+
+## Alternative: Nodemailer Configuration
+
+If you prefer to use Nodemailer instead of Web3Forms, you can configure SMTP settings:
+
+### Environment Variables for Nodemailer
+
+```bash .env
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_USER=your_email@gmail.com
+EMAIL_PASS=your_app_specific_password
+```
+
+### Nodemailer Implementation
+
+```javascript
+const nodemailer = require('nodemailer');
+
+// Create transporter
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  secure: false, // true for 465, false for other ports
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+
+// Send email
+const sendEmail = async (options) => {
+  const mailOptions = {
+    from: `BillBuddy <${process.env.EMAIL_USER}>`,
+    to: options.to,
+    subject: options.subject,
+    html: options.body
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+```
+
+### Gmail Configuration
+
+<Note>
+  For Gmail, you need to use an App Password instead of your regular password. Enable 2-factor authentication and generate an app password from your Google Account settings.
+</Note>
+
+## Testing Email Functionality
+
+### Test Email Sending
+
+Create a test script to verify email configuration:
+
+```javascript test-email.js
+const { sendSettlementEmail } = require('./utils/email');
+
+// Mock group data
+const testGroup = {
+  name: 'Test Group',
+  members: [
+    { user: { email: 'test1@example.com', name: 'Test User 1', _id: '1' } },
+    { user: { email: 'test2@example.com', name: 'Test User 2', _id: '2' } }
+  ]
+};
+
+const testBalances = {
+  '1': 100,
+  '2': -100
+};
+
+sendSettlementEmail(testGroup, testBalances)
+  .then(() => console.log('Test email sent'))
+  .catch((err) => console.error('Test failed:', err));
+```
+
+Run the test:
+```bash
+node test-email.js
+```
+
+## Troubleshooting
+
+### Email Not Sending
+
+**Problem:** Emails are not being delivered
+
+**Solution:**
+1. Verify `WEB3FORMS_ACCESS_KEY` is set correctly
+2. Check the Web3Forms dashboard for usage limits
+3. Ensure recipient email addresses are valid
+4. Check application logs for error messages
+
+### Invalid Access Key
+
+**Problem:** `401 Unauthorized` or authentication errors
+
+**Solution:**
+1. Verify the access key in your `.env` file
+2. Generate a new access key from Web3Forms dashboard
+3. Restart the server after updating the key
+
+### Emails Going to Spam
+
+<Note>
+  Web3Forms handles email delivery infrastructure, but recipient mail servers may still flag emails as spam.
+</Note>
+
+**Tips to improve delivery:**
+- Use a professional sender name
+- Keep email content clear and concise
+- Avoid spam trigger words
+- Consider using a custom domain for `from_email`
+
+### Rate Limiting
+
+Web3Forms has rate limits based on your plan:
+
+- **Free Plan:** 250 emails per month
+- **Paid Plans:** Higher limits available
+
+<Warning>
+  Monitor your email usage to avoid hitting rate limits during high-traffic periods. Consider implementing a queue system for large-scale deployments.
+</Warning>
+
+## Best Practices
+
+1. **Error Handling:** Always wrap email sending in try-catch blocks
+2. **Logging:** Log email send attempts and failures for debugging
+3. **Testing:** Test email functionality in development before deploying
+4. **Monitoring:** Track email delivery success rates
+5. **Fallback:** Consider implementing a fallback notification method (SMS, in-app notifications)
+6. **Templates:** Use email templates for consistent formatting
+7. **Personalization:** Include recipient names and relevant details
+
+## Security Considerations
+
+<Warning>
+  Never expose your Web3Forms access key in client-side code or public repositories.
+</Warning>
+
+- Store access keys in environment variables only
+- Rotate access keys periodically
+- Monitor usage for unusual activity
+- Validate email addresses before sending
+- Sanitize user input in email content to prevent injection attacks

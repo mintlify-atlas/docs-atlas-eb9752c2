@@ -1,0 +1,564 @@
+---
+title: Installation
+description: Detailed installation instructions for BillBuddy backend and frontend
+---
+
+## System requirements
+
+Before installing BillBuddy, ensure your system meets these requirements:
+
+- **Node.js**: v18.0.0 or higher (specified in `backend/package.json:6-8`)
+- **MongoDB**: v4.4 or higher
+- **npm**: v8 or higher (or yarn as an alternative)
+- **Memory**: Minimum 2GB RAM recommended
+- **Disk Space**: 500MB for dependencies and database
+
+<Note>
+  BillBuddy uses modern JavaScript features and requires Node.js v18+ as specified in the backend engine configuration.
+</Note>
+
+## Repository structure
+
+BillBuddy follows a monorepo structure with separate backend and frontend directories:
+
+```
+billbuddy/
+├── backend/          # Express.js backend
+│   ├── models/       # Mongoose data models
+│   ├── routes/       # API route handlers
+│   ├── middleware/   # Authentication middleware
+│   ├── utils/        # Email and utility functions
+│   ├── server.js     # Express app entry point
+│   └── package.json
+└── frontend/         # React frontend
+    ├── src/
+    │   ├── pages/    # React page components
+    │   ├── components/ # Reusable UI components
+    │   ├── context/  # React context providers
+    │   └── App.jsx   # Main app component
+    └── package.json
+```
+
+## Backend installation
+
+<Steps>
+  <Step title="Navigate to backend directory">
+    ```bash
+    cd backend
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all required npm packages:
+
+    ```bash
+    npm install
+    ```
+
+    This installs the following key dependencies:
+
+    <CodeGroup>
+    ```json Core dependencies
+    {
+      "express": "^4.18.2",
+      "mongoose": "^7.5.0",
+      "jsonwebtoken": "^9.0.2",
+      "bcryptjs": "^2.4.3",
+      "dotenv": "^16.3.1",
+      "cors": "^2.8.5"
+    }
+    ```
+
+    ```json Additional dependencies
+    {
+      "nodemailer": "^6.10.1",
+      "validator": "^13.11.0",
+      "axios": "^1.8.4"
+    }
+    ```
+
+    ```json Development dependencies
+    {
+      "nodemon": "^3.0.1",
+      "concurrently": "^8.2.1"
+    }
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create a `.env` file in the `backend` directory:
+
+    ```bash .env
+    # Server Configuration
+    PORT=5000
+
+    # Database Configuration
+    MONGODB_URI=mongodb://localhost:27017/billbuddy
+
+    # JWT Configuration
+    JWT_SECRET=your_secure_jwt_secret_key_minimum_32_characters
+
+    # Email Configuration (Optional)
+    WEB3FORMS_ACCESS_KEY=your_web3forms_access_key
+    ```
+
+    ### Environment variable details
+
+    <AccordionGroup>
+      <Accordion title="PORT">
+        The port on which the Express server will run. Default is 5000.
+        
+        The server listens on this port as specified in `server.js:62`:
+        ```javascript
+        const PORT = process.env.PORT || 5000;
+        app.listen(PORT, () => {
+          console.log(`Server running on port ${PORT}`);
+        });
+        ```
+      </Accordion>
+
+      <Accordion title="MONGODB_URI">
+        MongoDB connection string. Can be:
+        - Local: `mongodb://localhost:27017/billbuddy`
+        - MongoDB Atlas: `mongodb+srv://username:password@cluster.mongodb.net/billbuddy`
+        
+        Used in `server.js:40-42` for database connection:
+        ```javascript
+        mongoose.connect(process.env.MONGODB_URI)
+          .then(() => console.log('Connected to MongoDB'))
+          .catch((err) => console.error('MongoDB connection error:', err));
+        ```
+      </Accordion>
+
+      <Accordion title="JWT_SECRET">
+        Secret key for signing JWT tokens. Must be a strong, random string.
+        
+        Used in `models/User.js:48-50` for token generation:
+        ```javascript
+        UserSchema.methods.getSignedJwtToken = function() {
+          return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
+            expiresIn: '30d'
+          });
+        };
+        ```
+        
+        <Warning>
+          Use a secure random string (minimum 32 characters). Never commit this to version control. Tokens expire after 30 days.
+        </Warning>
+      </Accordion>
+
+      <Accordion title="WEB3FORMS_ACCESS_KEY">
+        Access key for Web3Forms email service. Used for sending settlement summaries.
+        
+        Implemented in `utils/email.js:31-39`:
+        ```javascript
+        const response = await axios.post('https://api.web3forms.com/submit', {
+          access_key: process.env.WEB3FORMS_ACCESS_KEY,
+          subject,
+          from_name: 'BillBuddy',
+          to: members.join(','),
+          body
+        });
+        ```
+        
+        Get a free key at [web3forms.com](https://web3forms.com). Optional for development but recommended for production.
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+
+  <Step title="Set up MongoDB">
+    BillBuddy requires a running MongoDB instance. Choose one option:
+
+    <Tabs>
+      <Tab title="Local MongoDB">
+        **macOS (Homebrew):**
+        ```bash
+        # Install MongoDB
+        brew tap mongodb/brew
+        brew install mongodb-community
+
+        # Start MongoDB service
+        brew services start mongodb-community
+
+        # Verify MongoDB is running
+        mongosh
+        ```
+
+        **Ubuntu/Debian:**
+        ```bash
+        # Install MongoDB
+        sudo apt-get install -y mongodb-org
+
+        # Start MongoDB service
+        sudo systemctl start mongod
+        sudo systemctl enable mongod
+
+        # Verify MongoDB is running
+        sudo systemctl status mongod
+        ```
+
+        **Windows:**
+        Download and install from [mongodb.com/try/download/community](https://www.mongodb.com/try/download/community)
+      </Tab>
+
+      <Tab title="MongoDB Atlas (Cloud)">
+        1. Create a free account at [mongodb.com/cloud/atlas](https://www.mongodb.com/cloud/atlas)
+        2. Create a new cluster
+        3. Add a database user
+        4. Whitelist your IP address (or use 0.0.0.0/0 for development)
+        5. Get your connection string and update `MONGODB_URI` in `.env`:
+
+        ```bash
+        MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/billbuddy?retryWrites=true&w=majority
+        ```
+      </Tab>
+
+      <Tab title="Docker">
+        Run MongoDB in a Docker container:
+
+        ```bash
+        # Pull and run MongoDB image
+        docker run -d \
+          --name billbuddy-mongodb \
+          -p 27017:27017 \
+          -v billbuddy-data:/data/db \
+          mongo:7
+
+        # Verify container is running
+        docker ps
+        ```
+
+        Use the default local connection string in your `.env`:
+        ```bash
+        MONGODB_URI=mongodb://localhost:27017/billbuddy
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Start the backend server">
+    <Tabs>
+      <Tab title="Development">
+        Run with nodemon for automatic reloading:
+        ```bash
+        npm run dev
+        ```
+
+        Output:
+        ```
+        [nodemon] 3.0.1
+        [nodemon] watching path(s): *.*
+        [nodemon] watching extensions: js,mjs,json
+        Server running on port 5000
+        Connected to MongoDB
+        ```
+      </Tab>
+
+      <Tab title="Production">
+        Run with Node.js directly:
+        ```bash
+        npm start
+        ```
+
+        For production deployments, consider using PM2:
+        ```bash
+        npm install -g pm2
+        pm2 start server.js --name billbuddy-backend
+        pm2 save
+        pm2 startup
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Frontend installation
+
+<Steps>
+  <Step title="Navigate to frontend directory">
+    ```bash
+    cd frontend
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all required npm packages:
+
+    ```bash
+    npm install
+    ```
+
+    This installs the following key dependencies:
+
+    <CodeGroup>
+    ```json React and routing
+    {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0",
+      "react-router-dom": "^6.22.1"
+    }
+    ```
+
+    ```json UI framework
+    {
+      "@mui/material": "^5.15.10",
+      "@mui/icons-material": "^5.15.10",
+      "@emotion/react": "^11.11.3",
+      "@emotion/styled": "^11.11.0",
+      "tailwindcss": "^4.1.14"
+    }
+    ```
+
+    ```json Forms and HTTP
+    {
+      "axios": "^1.6.7",
+      "formik": "^2.4.5",
+      "yup": "^1.3.3"
+    }
+    ```
+
+    ```json Build tools
+    {
+      "vite": "^5.1.0",
+      "@vitejs/plugin-react": "^4.2.1"
+    }
+    ```
+    </CodeGroup>
+  </Step>
+
+  <Step title="Configure API endpoint">
+    The frontend is configured to communicate with the backend at `http://localhost:5000`.
+
+    The CORS configuration in `server.js:30-37` allows these origins:
+    ```javascript
+    app.use(cors({
+      origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+      credentials: true
+    }));
+    ```
+
+    <Warning>
+      If you change the backend port or deploy to a different domain, update the CORS configuration in `server.js` to include your new origin.
+    </Warning>
+  </Step>
+
+  <Step title="Start the development server">
+    Run the Vite development server:
+
+    ```bash
+    npm run dev
+    ```
+
+    Output:
+    ```
+    VITE v5.1.0  ready in 500 ms
+
+    ➜  Local:   http://localhost:5173/
+    ➜  Network: use --host to expose
+    ➜  press h + enter to show help
+    ```
+
+    The frontend will be available at `http://localhost:5173`.
+  </Step>
+
+  <Step title="Build for production">
+    To create an optimized production build:
+
+    ```bash
+    npm run build
+    ```
+
+    This creates a `dist` folder with optimized assets. Preview the production build:
+
+    ```bash
+    npm run preview
+    ```
+  </Step>
+</Steps>
+
+## Verify installation
+
+<Steps>
+  <Step title="Test backend API">
+    Verify the backend is running by testing the health endpoint:
+
+    ```bash
+    curl http://localhost:5000/api/auth/me
+    ```
+
+    You should receive a 401 response (expected without authentication).
+  </Step>
+
+  <Step title="Test frontend">
+    Open `http://localhost:5173` in your browser. You should see the BillBuddy home page with:
+    - Navigation bar with Login/Register buttons
+    - Hero section with gradient background
+    - Feature cards
+  </Step>
+
+  <Step title="Test user registration">
+    1. Click "Sign Up" or navigate to `http://localhost:5173/register`
+    2. Fill in the registration form (name, email, password)
+    3. Submit the form
+    4. You should be redirected to the groups page with a valid JWT token
+  </Step>
+
+  <Step title="Test database connection">
+    Verify data was saved to MongoDB:
+
+    ```bash
+    mongosh
+    use billbuddy
+    db.users.find().pretty()
+    ```
+
+    You should see your newly registered user.
+  </Step>
+</Steps>
+
+## Running both servers
+
+For development convenience, you can run both servers simultaneously:
+
+### Option 1: Using concurrently (from backend directory)
+
+```bash
+cd backend
+npm run dev:full
+```
+
+This script (defined in `backend/package.json:13`) uses `concurrently` to run both servers:
+```json
+"dev:full": "concurrently \"npm run dev\" \"npm run client\""
+```
+
+### Option 2: Separate terminals
+
+**Terminal 1 (Backend):**
+```bash
+cd backend
+npm run dev
+```
+
+**Terminal 2 (Frontend):**
+```bash
+cd frontend
+npm run dev
+```
+
+## Common issues
+
+<AccordionGroup>
+  <Accordion title="Module not found errors">
+    If you encounter module not found errors:
+
+    1. Delete `node_modules` folders:
+       ```bash
+       rm -rf backend/node_modules frontend/node_modules
+       ```
+    2. Clear npm cache:
+       ```bash
+       npm cache clean --force
+       ```
+    3. Reinstall dependencies:
+       ```bash
+       cd backend && npm install
+       cd ../frontend && npm install
+       ```
+  </Accordion>
+
+  <Accordion title="MongoDB connection refused">
+    If you see "ECONNREFUSED" or "MongoServerError":
+
+    1. Verify MongoDB is running:
+       ```bash
+       # macOS
+       brew services list | grep mongodb
+       
+       # Linux
+       sudo systemctl status mongod
+       ```
+    2. Check the MongoDB port (default 27017):
+       ```bash
+       lsof -i :27017
+       ```
+    3. Verify your `MONGODB_URI` in `.env` is correct
+    4. Check MongoDB logs for errors:
+       ```bash
+       # macOS
+       tail -f /usr/local/var/log/mongodb/mongo.log
+       
+       # Linux
+       sudo tail -f /var/log/mongodb/mongod.log
+       ```
+  </Accordion>
+
+  <Accordion title="CORS policy errors">
+    If you see CORS errors in the browser console:
+
+    1. Verify the backend is running on port 5000
+    2. Verify the frontend is running on port 5173
+    3. Check the CORS configuration in `backend/server.js:30-37`
+    4. Clear browser cache and hard reload (Cmd/Ctrl + Shift + R)
+
+    For custom ports, update the CORS origins:
+    ```javascript
+    app.use(cors({
+      origin: ['http://localhost:YOUR_PORT'],
+      // ...
+    }));
+    ```
+  </Accordion>
+
+  <Accordion title="JWT authentication fails">
+    If authentication tokens are not working:
+
+    1. Verify `JWT_SECRET` is set in your `.env` file
+    2. Check that the secret is at least 32 characters
+    3. Clear browser localStorage:
+       ```javascript
+       // In browser console
+       localStorage.clear();
+       ```
+    4. Register a new user to get a fresh token
+  </Accordion>
+
+  <Accordion title="Port already in use">
+    If port 5000 or 5173 is already in use:
+
+    **Backend port conflict:**
+    ```bash
+    # Find process using port 5000
+    lsof -i :5000
+    
+    # Kill the process
+    kill -9 <PID>
+    
+    # Or change the port in .env
+    PORT=5001
+    ```
+
+    **Frontend port conflict:**
+    Vite will automatically try the next available port (5174, 5175, etc.)
+  </Accordion>
+</AccordionGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="API reference" icon="code" href="/api/overview">
+    Explore all available API endpoints and request/response formats.
+  </Card>
+  <Card title="Authentication guide" icon="lock" href="/api/authentication">
+    Learn how to authenticate users and protect routes.
+  </Card>
+  <Card title="Core features" icon="star" href="/features/authentication">
+    Understand the MongoDB schema for Users, Groups, Expenses, and Settlements.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration/environment">
+    Configure environment variables and database settings.
+  </Card>
+</CardGroup>

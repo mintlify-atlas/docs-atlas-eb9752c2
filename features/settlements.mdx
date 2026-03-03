@@ -1,0 +1,563 @@
+---
+title: 'Settlements'
+description: 'Simplify group debts with intelligent settlement algorithms'
+icon: 'handshake'
+---
+
+## Overview
+
+Settlements in BillBuddy use a sophisticated debt simplification algorithm to minimize the number of transactions needed to settle all debts within a group. Instead of everyone paying back individually for each expense, the system calculates the optimal payment flow.
+
+## Settlement Model
+
+The Settlement model is defined in `backend/models/Settlement.js:3-62`:
+
+```javascript Settlement Schema
+const SettlementSchema = new mongoose.Schema({
+  group: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Group',
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['individual', 'group'],
+    required: true
+  },
+  // For individual settlements
+  from: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  to: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  amount: {
+    type: Number
+  },
+  // For group settlements
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'completed', 'cancelled'],
+    default: 'pending'
+  },
+  summary: {
+    type: [{
+      from: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+      },
+      to: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+      },
+      amount: {
+        type: Number,
+        required: true
+      }
+    }],
+    required: true,
+    validate: [val => val.length > 0, 'Settlement summary cannot be empty.']
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+```
+
+## Settlement Types
+
+<CardGroup cols={2}>
+  <Card title="Group Settlement" icon="users">
+    Settles all debts in the entire group using the minimum number of transactions
+  </Card>
+  <Card title="Individual Settlement" icon="user">
+    Settles a specific debt between two users (future feature)
+  </Card>
+</CardGroup>
+
+## Debt Simplification Algorithm
+
+BillBuddy implements a greedy algorithm that minimizes the number of transactions needed to settle all debts. This is defined in `backend/routes/settlements.js:14-70`.
+
+### How It Works
+
+<Steps>
+  <Step title="Calculate Final Balances">
+    Sum up all expenses to determine who owes money (debtors) and who is owed money (creditors)
+  </Step>
+  <Step title="Sort by Amount">
+    Sort creditors by largest amount owed (descending) and debtors by largest debt (descending)
+  </Step>
+  <Step title="Match Debts">
+    Match the largest debtor with the largest creditor, settling the smaller of the two amounts
+  </Step>
+  <Step title="Repeat">
+    Continue matching until all debts are settled
+  </Step>
+</Steps>
+
+**Example:**
+
+Original balances:
+- Alice: +$100 (owed)
+- Bob: -$40 (owes)
+- Charlie: -$60 (owes)
+
+Simplified to just 2 transactions:
+1. Charlie pays Alice $60
+2. Bob pays Alice $40
+
+Instead of potentially requiring multiple back-and-forth payments.
+
+### Algorithm Implementation
+
+```javascript Debt Simplification Algorithm
+const simplifyDebts = (balances) => {
+  // Convert the balances object into an array of { user, amount } objects
+  const balanceArray = Object.keys(balances).map(userId => ({
+    user: userId,
+    amount: balances[userId]
+  }));
+
+  // Separate members into creditors (positive balance) and debtors (negative balance)
+  const creditors = balanceArray.filter(b => b.amount > 0);
+  const debtors = balanceArray.filter(b => b.amount < 0);
+
+  // Sort by the largest amounts first
+  creditors.sort((a, b) => b.amount - a.amount);
+  debtors.sort((a, b) => a.amount - b.amount);
+
+  const transactions = [];
+  let debtorIndex = 0;
+  let creditorIndex = 0;
+
+  // Loop until all debts or credits are settled
+  while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+    const debtor = debtors[debtorIndex];
+    const creditor = creditors[creditorIndex];
+
+    // The amount to be settled is the smaller of the two balances
+    const amountToSettle = Math.min(Math.abs(debtor.amount), creditor.amount);
+
+    // Round to 2 decimal places to avoid floating point inaccuracies
+    const roundedAmount = Math.round(amountToSettle * 100) / 100;
+
+    if (roundedAmount > 0) {
+      transactions.push({
+        from: debtor.user,
+        to: creditor.user,
+        amount: roundedAmount,
+      });
+    }
+
+    // Update the balances of the current debtor and creditor
+    debtor.amount += roundedAmount;
+    creditor.amount -= roundedAmount;
+
+    // If a debtor's balance is settled, move to the next one
+    if (Math.abs(debtor.amount) < 0.01) {
+      debtorIndex++;
+    }
+
+    // If a creditor's balance is settled, move to the next one
+    if (creditor.amount < 0.01) {
+      creditorIndex++;
+    }
+  }
+
+  return transactions;
+};
+```
+
+<Info>
+  **Algorithm Optimization**: This greedy algorithm reduces the number of transactions to at most N-1, where N is the number of people in the group. For example, a group of 5 people needs at most 4 transactions to settle all debts.
+</Info>
+
+## API Endpoints
+
+### Create Group Settlement
+
+<Card title="POST /api/settlements" icon="plus">
+  Create a settlement for a group, calculating the minimum transactions needed to settle all debts.
+</Card>
+
+**Request Body:**
+```json
+{
+  "group": "507f1f77bcf86cd799439011"
+}
+```
+
+**Response:**
+```json
+{
+  "message": "Group settled successfully",
+  "settlement": {
+    "_id": "507f1f77bcf86cd799439030",
+    "group": "507f1f77bcf86cd799439011",
+    "type": "group",
+    "createdBy": "507f1f77bcf86cd799439012",
+    "status": "completed",
+    "summary": [
+      {
+        "from": {
+          "_id": "507f1f77bcf86cd799439013",
+          "name": "Bob Jones"
+        },
+        "to": {
+          "_id": "507f1f77bcf86cd799439012",
+          "name": "Alice Smith"
+        },
+        "amount": 45.50
+      },
+      {
+        "from": {
+          "_id": "507f1f77bcf86cd799439014",
+          "name": "Charlie Brown"
+        },
+        "to": {
+          "_id": "507f1f77bcf86cd799439012",
+          "name": "Alice Smith"
+        },
+        "amount": 32.75
+      }
+    ],
+    "createdAt": "2026-03-03T20:00:00.000Z"
+  }
+}
+```
+
+**Implementation** (from `backend/routes/settlements.js:76-142`):
+```javascript
+router.post('/', protect, async (req, res) => {
+  try {
+    const { group: groupId } = req.body;
+
+    // Check if group exists and populate members
+    const groupDoc = await Group.findById(groupId).populate('members.user', 'name');
+    if (!groupDoc) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+    
+    if (groupDoc.isSettled) {
+      return res.status(400).json({ message: 'This group has already been settled.' });
+    }
+
+    const isMember = groupDoc.members.some(
+      member => member.user._id.toString() === req.user.id
+    );
+
+    if (!isMember) {
+      return res.status(403).json({ message: 'Not authorized to settle this group' });
+    }
+
+    // --- Calculate Final Balances ---
+    const expenses = await Expense.find({ group: groupId });
+    const balances = {};
+    groupDoc.members.forEach(member => {
+      balances[member.user._id.toString()] = 0;
+    });
+
+    expenses.forEach(expense => {
+      balances[expense.paidBy.toString()] = (balances[expense.paidBy.toString()] || 0) + expense.amount;
+      const splitAmount = expense.amount / expense.splitAmong.length;
+      expense.splitAmong.forEach(userId => {
+        balances[userId.toString()] = (balances[userId.toString()] || 0) - splitAmount;
+      });
+    });
+    // --- End Balance Calculation ---
+
+    // Simplify debts to get the minimum transaction list
+    const settlementSummary = simplifyDebts(balances);
+
+    const settlement = new Settlement({
+      group: groupId,
+      createdBy: req.user.id,
+      status: 'completed',
+      summary: settlementSummary,
+      type: 'group',
+    });
+    await settlement.save();
+
+    groupDoc.isSettled = true;
+    await groupDoc.save();
+
+    const populatedSettlement = await Settlement.findById(settlement._id)
+        .populate('summary.from', 'name')
+        .populate('summary.to', 'name');
+
+    res.json({ 
+      message: 'Group settled successfully',
+      settlement: populatedSettlement,
+    });
+
+  } catch (err) {
+    console.error('Error creating settlement:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+```
+
+<Warning>
+  Once a group is settled (`isSettled: true`), you cannot create another settlement for it. The group is considered closed.
+</Warning>
+
+### Get Group Settlements
+
+<Card title="GET /api/settlements/group/:groupId" icon="list">
+  Retrieve all settlements for a specific group.
+</Card>
+
+**Response:**
+```json
+[
+  {
+    "_id": "507f1f77bcf86cd799439030",
+    "group": "507f1f77bcf86cd799439011",
+    "type": "group",
+    "createdBy": {
+      "_id": "507f1f77bcf86cd799439012",
+      "name": "Alice Smith",
+      "email": "alice@example.com"
+    },
+    "status": "completed",
+    "summary": [
+      {
+        "from": {
+          "_id": "507f1f77bcf86cd799439013",
+          "name": "Bob Jones"
+        },
+        "to": {
+          "_id": "507f1f77bcf86cd799439012",
+          "name": "Alice Smith"
+        },
+        "amount": 45.50
+      }
+    ],
+    "createdAt": "2026-03-03T20:00:00.000Z"
+  }
+]
+```
+
+### Update Settlement Status
+
+<Card title="PUT /api/settlements/:id/status" icon="pen-to-square">
+  Update the status of a settlement. Only the creator can update the status.
+</Card>
+
+**Request Body:**
+```json
+{
+  "status": "completed"
+}
+```
+
+**Valid Status Values:**
+- `pending` - Settlement created but not completed
+- `completed` - All transactions completed
+- `cancelled` - Settlement cancelled
+
+## Example Usage
+
+<Tabs>
+  <Tab title="Create Settlement">
+    ```javascript
+    const token = localStorage.getItem('token');
+    const groupId = '507f1f77bcf86cd799439011';
+
+    const response = await fetch('/api/settlements', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        group: groupId
+      })
+    });
+
+    const result = await response.json();
+    console.log('Settlement created:', result.settlement);
+    
+    // Display transactions to users
+    result.settlement.summary.forEach(transaction => {
+      console.log(
+        `${transaction.from.name} pays ${transaction.to.name} $${transaction.amount.toFixed(2)}`
+      );
+    });
+    ```
+  </Tab>
+  <Tab title="Get Settlements">
+    ```javascript
+    const token = localStorage.getItem('token');
+    const groupId = '507f1f77bcf86cd799439011';
+
+    const response = await fetch(`/api/settlements/group/${groupId}`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const settlements = await response.json();
+    
+    // Display settlement history
+    settlements.forEach(settlement => {
+      console.log(`Settlement on ${new Date(settlement.createdAt).toLocaleDateString()}`);
+      console.log(`Status: ${settlement.status}`);
+      console.log('Transactions:');
+      settlement.summary.forEach(t => {
+        console.log(`  ${t.from.name} → ${t.to.name}: $${t.amount}`);
+      });
+    });
+    ```
+  </Tab>
+  <Tab title="Update Status">
+    ```javascript
+    const token = localStorage.getItem('token');
+    const settlementId = '507f1f77bcf86cd799439030';
+
+    const response = await fetch(`/api/settlements/${settlementId}/status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        status: 'completed'
+      })
+    });
+
+    const updatedSettlement = await response.json();
+    console.log('Settlement updated:', updatedSettlement);
+    ```
+  </Tab>
+</Tabs>
+
+## Balance Calculation Details
+
+Before simplification, the system calculates final balances from all expenses:
+
+```javascript
+// Calculate Final Balances
+const expenses = await Expense.find({ group: groupId });
+const balances = {};
+
+// Initialize all members with 0 balance
+groupDoc.members.forEach(member => {
+  balances[member.user._id.toString()] = 0;
+});
+
+// Process each expense
+expenses.forEach(expense => {
+  // Person who paid gets credited
+  balances[expense.paidBy.toString()] = 
+    (balances[expense.paidBy.toString()] || 0) + expense.amount;
+  
+  // Everyone in the split gets debited their share
+  const splitAmount = expense.amount / expense.splitAmong.length;
+  expense.splitAmong.forEach(userId => {
+    balances[userId.toString()] = 
+      (balances[userId.toString()] || 0) - splitAmount;
+  });
+});
+```
+
+## Real-World Example
+
+Let's walk through a complete settlement scenario:
+
+<Accordion title="Scenario: Weekend Trip with 4 Friends">
+  **Expenses:**
+  1. Alice pays $200 for hotel (split 4 ways)
+  2. Bob pays $80 for gas (split 4 ways)
+  3. Charlie pays $120 for meals (split 4 ways)
+  4. David pays $40 for snacks (split 4 ways)
+
+  **Balance Calculation:**
+  - Alice: +$200 - $50 - $20 - $30 - $10 = +$90
+  - Bob: +$80 - $50 - $20 - $30 - $10 = -$30
+  - Charlie: +$120 - $50 - $20 - $30 - $10 = +$10
+  - David: +$40 - $50 - $20 - $30 - $10 = -$70
+
+  **Without Simplification:**
+  Multiple potential transactions between everyone
+
+  **With Simplification (2 transactions):**
+  1. David pays Alice $70
+  2. Bob pays Alice $20
+  3. Bob pays Charlie $10
+
+  Actually, the algorithm optimizes to:
+  1. David pays Alice $60
+  2. David pays Charlie $10
+  3. Bob pays Alice $30
+</Accordion>
+
+## Permission System
+
+<AccordionGroup>
+  <Accordion title="Who Can Create Settlements">
+    Any group member can create a settlement for their group. However, a group can only be settled once.
+  </Accordion>
+
+  <Accordion title="Who Can View Settlements">
+    Only group members can view settlements for their group. Non-members receive a 403 error.
+  </Accordion>
+
+  <Accordion title="Who Can Update Status">
+    Only the user who created the settlement can update its status.
+  </Accordion>
+</AccordionGroup>
+
+## Settlement Summary Fields
+
+Each transaction in the settlement summary contains:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `from` | User | The person who needs to pay |
+| `to` | User | The person who should receive payment |
+| `amount` | Number | The amount to be transferred (rounded to 2 decimals) |
+
+## Error Handling
+
+| Status Code | Message | Cause |
+|-------------|---------|-------|
+| 400 | This group has already been settled | Trying to settle an already-settled group |
+| 403 | Not authorized to settle this group | Non-member trying to create settlement |
+| 403 | Not authorized | Non-member trying to view settlements |
+| 403 | Not authorized | Non-creator trying to update status |
+| 404 | Group not found | Invalid group ID |
+| 404 | Settlement not found | Invalid settlement ID |
+| 500 | Server error | Internal server error |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Settle Regularly" icon="calendar-check">
+    Create settlements at regular intervals (monthly, after trips) rather than letting debts accumulate
+  </Card>
+  <Card title="Verify Before Settling" icon="list-check">
+    Review all expenses in the group before creating a settlement to ensure accuracy
+  </Card>
+  <Card title="Communication" icon="comments">
+    Communicate with group members before settling to ensure everyone agrees
+  </Card>
+  <Card title="Track Payments" icon="money-bill-transfer">
+    Update settlement status to 'completed' once all payments are made
+  </Card>
+</CardGroup>
+
+<Tip>
+  The debt simplification algorithm is particularly valuable for groups with many expenses. In a group of 10 people with 50 expenses, the algorithm might reduce hundreds of potential transactions to just 9 optimized payments.
+</Tip>

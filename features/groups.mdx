@@ -1,0 +1,521 @@
+---
+title: 'Groups'
+description: 'Create and manage expense groups with multiple members'
+icon: 'users'
+---
+
+## Overview
+
+Groups are the foundation of BillBuddy's expense tracking system. They allow multiple users to share and split expenses together, whether for roommates, travel buddies, or any shared financial arrangement.
+
+## Group Model
+
+The Group model is defined in `backend/models/Group.js:3-42` with the following structure:
+
+```javascript Group Schema
+const GroupSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Please provide a group name'],
+    trim: true,
+    maxlength: [50, 'Group name cannot be more than 50 characters']
+  },
+  description: {
+    type: String,
+    maxlength: [500, 'Description cannot be more than 500 characters']
+  },
+  members: [{
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    balance: {
+      type: Number,
+      default: 0
+    }
+  }],
+  expenses: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Expense'
+  }],
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  },
+  isSettled: {
+    type: Boolean,
+    default: false
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+```
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Member Management" icon="user-group">
+    Add and manage group members with automatic user creation for new emails
+  </Card>
+  <Card title="Balance Tracking" icon="scale-balanced">
+    Each member has a balance showing how much they owe or are owed
+  </Card>
+  <Card title="Expense Linking" icon="link">
+    All expenses are linked to the group for easy tracking
+  </Card>
+  <Card title="Settlement Status" icon="circle-check">
+    Track whether a group has been settled or is still active
+  </Card>
+</CardGroup>
+
+## API Endpoints
+
+### Create a New Group
+
+<Card title="POST /api/groups" icon="plus">
+  Create a new group with multiple members. The creator is automatically added as a member.
+</Card>
+
+**Request Body:**
+```json
+{
+  "name": "Roommates 2026",
+  "description": "Shared apartment expenses",
+  "members": [
+    { "email": "alice@example.com" },
+    { "email": "bob@example.com" }
+  ]
+}
+```
+
+**Response:**
+```json
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "Roommates 2026",
+  "description": "Shared apartment expenses",
+  "members": [
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439012",
+        "name": "Current User",
+        "email": "current@example.com"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439013",
+        "name": "Alice",
+        "email": "alice@example.com"
+      },
+      "balance": 0
+    }
+  ],
+  "expenses": [],
+  "createdBy": {
+    "_id": "507f1f77bcf86cd799439012",
+    "name": "Current User",
+    "email": "current@example.com"
+  },
+  "isSettled": false,
+  "createdAt": "2026-03-03T10:30:00.000Z"
+}
+```
+
+<Info>
+  **Auto User Creation**: If a member's email doesn't exist in the system, BillBuddy automatically creates a user account with a random password. The user can later reset their password to gain access.
+</Info>
+
+**Implementation** (from `backend/routes/groups.js:10-60`):
+```javascript
+router.post('/', protect, async (req, res) => {
+  try {
+    const { name, description, members } = req.body;
+
+    // Find or create users for each email
+    const memberUsers = await Promise.all(
+      members.map(async ({ email }) => {
+        let user = await User.findOne({ email });
+        if (!user) {
+          // Create a new user if they don't exist
+          user = new User({
+            name: email.split('@')[0], // Use email username as default name
+            email,
+            password: Math.random().toString(36).slice(-8), // Generate random password
+          });
+          await user.save();
+        }
+        return user._id;
+      })
+    );
+
+    // Create new group
+    const group = new Group({
+      name,
+      description,
+      members: [
+        { user: req.user.id, balance: 0 },
+        ...memberUsers.map(userId => ({ user: userId, balance: 0 }))
+      ],
+      createdBy: req.user.id
+    });
+
+    await group.save();
+
+    // Add group to users' groups array
+    await User.updateMany(
+      { _id: { $in: [req.user.id, ...memberUsers] } },
+      { $push: { groups: group._id } }
+    );
+
+    // Populate the response with user details
+    const populatedGroup = await Group.findById(group._id)
+      .populate('members.user', 'name email')
+      .populate('createdBy', 'name email');
+
+    res.status(201).json(populatedGroup);
+  } catch (error) {
+    console.error('Error creating group:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+```
+
+### Get All Groups
+
+<Card title="GET /api/groups" icon="list">
+  Retrieve all groups where the authenticated user is a member.
+</Card>
+
+**Response:**
+```json
+[
+  {
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "Roommates 2026",
+    "description": "Shared apartment expenses",
+    "members": [...],
+    "createdBy": {...},
+    "isSettled": false,
+    "createdAt": "2026-03-03T10:30:00.000Z"
+  },
+  {
+    "_id": "507f1f77bcf86cd799439014",
+    "name": "Europe Trip",
+    "description": "Summer vacation expenses",
+    "members": [...],
+    "createdBy": {...},
+    "isSettled": true,
+    "createdAt": "2026-02-15T08:00:00.000Z"
+  }
+]
+```
+
+### Get Single Group
+
+<Card title="GET /api/groups/:id" icon="folder-open">
+  Retrieve detailed information about a specific group, including all expenses.
+</Card>
+
+**Response:**
+```json
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "Roommates 2026",
+  "description": "Shared apartment expenses",
+  "members": [
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439012",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "balance": 150.50
+    },
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439013",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+      },
+      "balance": -150.50
+    }
+  ],
+  "expenses": [
+    {
+      "_id": "507f1f77bcf86cd799439020",
+      "description": "Electricity bill",
+      "amount": 120.00,
+      "date": "2026-03-01T00:00:00.000Z"
+    }
+  ],
+  "createdBy": {...},
+  "isSettled": false,
+  "createdAt": "2026-03-03T10:30:00.000Z"
+}
+```
+
+<Warning>
+  Only group members can access group details. If a non-member tries to access a group, the API returns a 403 Forbidden error.
+</Warning>
+
+### Update Group
+
+<Card title="PUT /api/groups/:id" icon="pen-to-square">
+  Update group name, description, or members. Only the group creator can update the group.
+</Card>
+
+**Request Body:**
+```json
+{
+  "name": "Updated Roommates 2026",
+  "description": "Updated description",
+  "members": ["507f1f77bcf86cd799439013", "507f1f77bcf86cd799439015"]
+}
+```
+
+<Note>
+  When updating members, the old members are removed from the group, and the group is removed from their user records. The creator is automatically included in the new member list.
+</Note>
+
+### Delete Group
+
+<Card title="DELETE /api/groups/:id" icon="trash">
+  Delete a group permanently. Only the group creator can delete the group.
+</Card>
+
+**Response:**
+```json
+{
+  "message": "Group removed"
+}
+```
+
+### Add Member to Group
+
+<Card title="POST /api/groups/:id/members" icon="user-plus">
+  Add a new member to an existing group by email.
+</Card>
+
+**Request Body:**
+```json
+{
+  "email": "newmember@example.com"
+}
+```
+
+**Response:**
+Returns the updated group with all members populated.
+
+**Implementation** (from `backend/routes/groups.js:194-249`):
+```javascript
+router.post('/:id/members', protect, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const groupId = req.params.id;
+
+    const group = await Group.findById(groupId);
+
+    if (!group) {
+      return res.status(404).json({ message: 'Group not found' });
+    }
+
+    // Check if user is the creator of the group
+    if (group.createdBy.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized to add members to this group' });
+    }
+
+    // Find user by email
+    const userToAdd = await User.findOne({ email });
+
+    if (!userToAdd) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Check if user is already a member
+    const isAlreadyMember = group.members.some(
+      member => member.user.toString() === userToAdd._id.toString()
+    );
+
+    if (isAlreadyMember) {
+      return res.status(400).json({ message: 'User is already a member of this group' });
+    }
+
+    // Add user to group members
+    group.members.push({ user: userToAdd._id, balance: 0 });
+    await group.save();
+
+    // Add group to user's groups array
+    await User.findByIdAndUpdate(userToAdd._id, {
+      $push: { groups: group._id }
+    });
+
+    // Populate the response with user details
+    const updatedGroup = await Group.findById(groupId)
+      .populate('members.user', 'name email')
+      .populate('createdBy', 'name email');
+
+    res.json(updatedGroup);
+  } catch (error) {
+    console.error('Error adding member:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+```
+
+## Balance Calculation
+
+Groups have a built-in method to calculate member balances based on all expenses in the group.
+
+```javascript Balance Calculation Method
+// Method to calculate member balances
+GroupSchema.methods.calculateBalances = function() {
+  const balances = {};
+  
+  // Initialize balances for all members
+  this.members.forEach(member => {
+    balances[member.user.toString()] = 0;
+  });
+
+  // Calculate balances from expenses
+  this.expenses.forEach(expense => {
+    const paidBy = expense.paidBy.toString();
+    const amount = expense.amount;
+    const splitCount = expense.splitAmong.length;
+    const perPersonShare = amount / splitCount;
+
+    // Add to paidBy's balance
+    balances[paidBy] = (balances[paidBy] || 0) + amount;
+
+    // Subtract from each person's share
+    expense.splitAmong.forEach(userId => {
+      const id = userId.toString();
+      if (id !== paidBy) {
+        balances[id] = (balances[id] || 0) - perPersonShare;
+      }
+    });
+  });
+
+  return balances;
+};
+```
+
+<Info>
+  **How Balances Work**: 
+  - If a member paid for an expense, their balance increases by the expense amount
+  - Each member involved in the expense has their balance decreased by their share
+  - Positive balance = owed money by others
+  - Negative balance = owes money to others
+</Info>
+
+## Permission System
+
+<AccordionGroup>
+  <Accordion title="Group Creator">
+    The user who created the group has full permissions:
+    - Update group name and description
+    - Add new members
+    - Remove members (by updating the member list)
+    - Delete the entire group
+  </Accordion>
+
+  <Accordion title="Group Members">
+    All group members can:
+    - View group details and balances
+    - Add expenses to the group
+    - View all group expenses
+    - Initiate settlements
+  </Accordion>
+
+  <Accordion title="Non-Members">
+    Users who are not members of a group:
+    - Cannot view group details
+    - Cannot add expenses
+    - Cannot see member balances
+  </Accordion>
+</AccordionGroup>
+
+## Example Usage
+
+<Tabs>
+  <Tab title="Create Group">
+    ```javascript
+    const token = localStorage.getItem('token');
+
+    const response = await fetch('/api/groups', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        name: 'Weekend Trip',
+        description: 'Expenses for our weekend getaway',
+        members: [
+          { email: 'friend1@example.com' },
+          { email: 'friend2@example.com' }
+        ]
+      })
+    });
+
+    const group = await response.json();
+    console.log('Group created:', group);
+    ```
+  </Tab>
+  <Tab title="Get All Groups">
+    ```javascript
+    const token = localStorage.getItem('token');
+
+    const response = await fetch('/api/groups', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+
+    const groups = await response.json();
+    console.log('My groups:', groups);
+    ```
+  </Tab>
+  <Tab title="Add Member">
+    ```javascript
+    const token = localStorage.getItem('token');
+    const groupId = '507f1f77bcf86cd799439011';
+
+    const response = await fetch(`/api/groups/${groupId}/members`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        email: 'newperson@example.com'
+      })
+    });
+
+    const updatedGroup = await response.json();
+    console.log('Member added:', updatedGroup);
+    ```
+  </Tab>
+</Tabs>
+
+## Error Handling
+
+| Status Code | Message | Cause |
+|-------------|---------|-------|
+| 400 | User is already a member of this group | Trying to add an existing member |
+| 403 | Not authorized to access this group | Non-member trying to view group |
+| 403 | Not authorized to update this group | Non-creator trying to update |
+| 403 | Not authorized to delete this group | Non-creator trying to delete |
+| 403 | Not authorized to add members to this group | Non-creator trying to add members |
+| 404 | Group not found | Invalid group ID |
+| 404 | User not found | Email doesn't exist when adding member |
+| 500 | Server error | Internal server error |
+
+<Tip>
+  When creating a group, you don't need to register all members first. BillBuddy automatically creates accounts for new emails with random passwords. Members can later claim their accounts by resetting their password.
+</Tip>

@@ -1,80 +1,189 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart
+description: Get BillBuddy running locally in under 5 minutes
 ---
 
-## Get started in three steps
+## Prerequisites
 
-Get your documentation site running locally and make your first customization.
+Before you begin, ensure you have the following installed:
 
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+- Node.js v18 or higher
+- MongoDB v4.4 or higher (running locally or accessible remotely)
+- npm or yarn package manager
+- Git (for cloning the repository)
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+  This quickstart guide will get you up and running with default settings. For production deployments or advanced configuration, see the [installation guide](/installation).
 </Note>
+
+## Quick setup
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the BillBuddy repository and navigate to the project directory:
+
+    ```bash
+    git clone https://github.com/yourusername/billbuddy.git
+    cd billbuddy
+    ```
+  </Step>
+
+  <Step title="Install backend dependencies">
+    Install the required Node.js packages for the backend:
+
+    ```bash
+    cd backend
+    npm install
+    ```
+
+    This installs Express.js, MongoDB, JWT, and other backend dependencies.
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create a `.env` file in the `backend` directory with your configuration:
+
+    ```bash .env
+    PORT=5000
+    MONGODB_URI=mongodb://localhost:27017/billbuddy
+    JWT_SECRET=your_secure_jwt_secret_key_here
+    WEB3FORMS_ACCESS_KEY=your_web3forms_key_here
+    ```
+
+    <Warning>
+      Replace `your_secure_jwt_secret_key_here` with a strong, random secret. This is used to sign authentication tokens and should be kept secure.
+    </Warning>
+
+    <Note>
+      The `WEB3FORMS_ACCESS_KEY` is optional for development. Get a free key at [web3forms.com](https://web3forms.com) to enable email settlement summaries.
+    </Note>
+  </Step>
+
+  <Step title="Start MongoDB">
+    Ensure MongoDB is running on your system. If you have MongoDB installed locally:
+
+    ```bash
+    # macOS (using Homebrew)
+    brew services start mongodb-community
+
+    # Linux (using systemd)
+    sudo systemctl start mongod
+
+    # Or run MongoDB directly
+    mongod --dbpath /path/to/your/data/directory
+    ```
+
+    <Note>
+      You can also use MongoDB Atlas (cloud) by updating the `MONGODB_URI` in your `.env` file with your Atlas connection string.
+    </Note>
+  </Step>
+
+  <Step title="Start the backend server">
+    Launch the Express.js backend server:
+
+    ```bash
+    npm run dev
+    ```
+
+    You should see:
+    ```
+    Server running on port 5000
+    Connected to MongoDB
+    ```
+
+    The backend API is now running at `http://localhost:5000`.
+  </Step>
+
+  <Step title="Install frontend dependencies">
+    Open a new terminal window and install the React frontend dependencies:
+
+    ```bash
+    cd frontend
+    npm install
+    ```
+
+    This installs React, Material-UI, Axios, and other frontend dependencies.
+  </Step>
+
+  <Step title="Start the frontend development server">
+    Launch the Vite development server for the React frontend:
+
+    ```bash
+    npm run dev
+    ```
+
+    The frontend will be available at `http://localhost:5173`.
+  </Step>
+
+  <Step title="Access BillBuddy">
+    Open your browser and navigate to `http://localhost:5173`. You should see the BillBuddy home page.
+
+    <Note>
+      The frontend is configured to communicate with the backend at `http://localhost:5000`. If you change the backend port, update the API base URL in the frontend code.
+    </Note>
+  </Step>
+</Steps>
+
+## Verify your installation
+
+To confirm everything is working correctly:
+
+1. **Test user registration**: Click "Sign Up" and create a new account
+2. **Create a group**: Navigate to "Groups" and create your first expense group
+3. **Add an expense**: Add a test expense to your group
+4. **Check balances**: Verify that balances are calculated correctly
+
+## What's next?
+
+<CardGroup cols={2}>
+  <Card title="API reference" icon="code" href="/api/overview">
+    Explore all available API endpoints and learn how to integrate with BillBuddy.
+  </Card>
+  <Card title="Detailed installation" icon="book" href="/installation">
+    Learn about advanced configuration options and production setup.
+  </Card>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Understand how JWT authentication works in BillBuddy.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration/environment">
+    Configure environment variables and settings for your deployment.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Port already in use
+
+If port 5000 or 5173 is already in use, you can change the ports:
+
+- **Backend**: Update `PORT` in your `.env` file
+- **Frontend**: Vite will automatically try the next available port, or you can specify one in `vite.config.js`
+
+### MongoDB connection error
+
+If you see "MongoDB connection error":
+
+1. Verify MongoDB is running: `mongosh` (should connect successfully)
+2. Check your `MONGODB_URI` in the `.env` file
+3. Ensure the MongoDB port (default 27017) is not blocked
+
+### CORS errors
+
+If you encounter CORS errors:
+
+1. Verify the backend is running on port 5000
+2. Check that the frontend is running on port 5173
+3. The backend CORS configuration in `server.js:30-37` allows these origins by default
+
+<Warning>
+  For production deployments, update the CORS configuration to include your production domain instead of localhost URLs.
+</Warning>
+
+## Running both servers concurrently
+
+For convenience during development, you can run both servers with a single command from the backend directory:
+
+```bash
+npm run dev:full
+```
+
+This uses `concurrently` to run both the backend and frontend development servers simultaneously.

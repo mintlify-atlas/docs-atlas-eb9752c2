@@ -1,0 +1,495 @@
+---
+title: 'Groups'
+description: 'Group management and member operations'
+---
+
+<Note>
+  All group endpoints require authentication. Include the JWT token in the Authorization header.
+</Note>
+
+## Create Group
+
+<api method="POST" path="/api/groups" auth="bearer" />
+
+Create a new expense-sharing group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  Group name (max 50 characters)
+</ParamField>
+
+<ParamField body="description" type="string">
+  Group description (max 500 characters)
+</ParamField>
+
+<ParamField body="members" type="array" required>
+  Array of member objects with email addresses
+  
+  <Expandable title="Member object structure">
+    <ParamField body="email" type="string" required>
+      Member's email address. If user doesn't exist, a new account will be created automatically.
+    </ParamField>
+  </Expandable>
+</ParamField>
+
+### Response
+
+<ResponseField name="_id" type="string">
+  Group's unique identifier
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Group name
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Group description
+</ResponseField>
+
+<ResponseField name="members" type="array">
+  Array of member objects
+  <Expandable title="Member object">
+    <ResponseField name="user" type="object">
+      User object with _id, name, and email
+    </ResponseField>
+    <ResponseField name="balance" type="number">
+      Member's current balance in the group
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="createdBy" type="object">
+  Creator's user object with _id, name, and email
+</ResponseField>
+
+<ResponseField name="expenses" type="array">
+  Array of expense IDs
+</ResponseField>
+
+<ResponseField name="isSettled" type="boolean">
+  Whether the group has been settled
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X POST https://api.billbuddy.com/api/groups \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Weekend Trip",
+    "description": "Expenses for our camping trip",
+    "members": [
+      { "email": "alice@example.com" },
+      { "email": "bob@example.com" }
+    ]
+  }'
+```
+
+### Example Response
+
+```json 201 Created
+{
+  "_id": "507f191e810c19729de860ea",
+  "name": "Weekend Trip",
+  "description": "Expenses for our camping trip",
+  "members": [
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439011",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439012",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+      },
+      "balance": 0
+    }
+  ],
+  "createdBy": {
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  "expenses": [],
+  "isSettled": false,
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+---
+
+## Get All Groups
+
+<api method="GET" path="/api/groups" auth="bearer" />
+
+Retrieve all groups the current user is a member of.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Response
+
+Returns an array of group objects with populated member and creator information.
+
+### Example Request
+
+```bash cURL
+curl -X GET https://api.billbuddy.com/api/groups \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+[
+  {
+    "_id": "507f191e810c19729de860ea",
+    "name": "Weekend Trip",
+    "description": "Expenses for our camping trip",
+    "members": [
+      {
+        "user": {
+          "_id": "507f1f77bcf86cd799439011",
+          "name": "John Doe",
+          "email": "john@example.com"
+        },
+        "balance": 0
+      }
+    ],
+    "createdBy": {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com"
+    },
+    "expenses": [],
+    "isSettled": false,
+    "createdAt": "2024-01-15T10:30:00.000Z"
+  }
+]
+```
+
+---
+
+## Get Single Group
+
+<api method="GET" path="/api/groups/:id" auth="bearer" />
+
+Retrieve detailed information about a specific group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Group ID
+</ParamField>
+
+### Response
+
+Returns a group object with populated members, creator, and expenses.
+
+### Example Request
+
+```bash cURL
+curl -X GET https://api.billbuddy.com/api/groups/507f191e810c19729de860ea \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "_id": "507f191e810c19729de860ea",
+  "name": "Weekend Trip",
+  "description": "Expenses for our camping trip",
+  "members": [
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439011",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "balance": 0
+    }
+  ],
+  "createdBy": {
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  "expenses": [
+    {
+      "_id": "507f191e810c19729de860eb",
+      "description": "Groceries",
+      "amount": 150.50
+    }
+  ],
+  "isSettled": false,
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to access this group"
+}
+```
+
+---
+
+## Update Group
+
+<api method="PUT" path="/api/groups/:id" auth="bearer" />
+
+Update group information. Only the group creator can update the group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Group ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="name" type="string">
+  Updated group name (max 50 characters)
+</ParamField>
+
+<ParamField body="description" type="string">
+  Updated group description (max 500 characters)
+</ParamField>
+
+<ParamField body="members" type="array">
+  Array of user IDs to set as group members. This will replace existing members (except the creator).
+</ParamField>
+
+### Example Request
+
+```bash cURL
+curl -X PUT https://api.billbuddy.com/api/groups/507f191e810c19729de860ea \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Updated Weekend Trip",
+    "description": "Updated description"
+  }'
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "_id": "507f191e810c19729de860ea",
+  "name": "Updated Weekend Trip",
+  "description": "Updated description",
+  "members": [...],
+  "createdBy": "507f1f77bcf86cd799439011",
+  "expenses": [],
+  "isSettled": false,
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to update this group"
+}
+```
+
+---
+
+## Delete Group
+
+<api method="DELETE" path="/api/groups/:id" auth="bearer" />
+
+Delete a group. Only the group creator can delete the group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Group ID
+</ParamField>
+
+### Example Request
+
+```bash cURL
+curl -X DELETE https://api.billbuddy.com/api/groups/507f191e810c19729de860ea \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "message": "Group removed"
+}
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to delete this group"
+}
+```
+
+---
+
+## Add Member to Group
+
+<api method="POST" path="/api/groups/:id/members" auth="bearer" />
+
+Add a new member to an existing group. Only the group creator can add members.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Group ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="email" type="string" required>
+  Email address of the user to add
+</ParamField>
+
+### Response
+
+Returns the updated group object with populated member and creator information.
+
+### Example Request
+
+```bash cURL
+curl -X POST https://api.billbuddy.com/api/groups/507f191e810c19729de860ea/members \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "newmember@example.com"
+  }'
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "_id": "507f191e810c19729de860ea",
+  "name": "Weekend Trip",
+  "description": "Expenses for our camping trip",
+  "members": [
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439011",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f1f77bcf86cd799439013",
+        "name": "New Member",
+        "email": "newmember@example.com"
+      },
+      "balance": 0
+    }
+  ],
+  "createdBy": {
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  "expenses": [],
+  "isSettled": false,
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 400 Bad Request
+{
+  "message": "User is already a member of this group"
+}
+```
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 404 Not Found
+{
+  "message": "User not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to add members to this group"
+}
+```

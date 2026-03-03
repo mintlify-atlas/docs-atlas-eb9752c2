@@ -1,0 +1,135 @@
+---
+title: Welcome to BillBuddy
+description: Split and track shared expenses with ease. BillBuddy helps you manage group expenses fairly and transparently.
+---
+
+<img
+  className="block dark:hidden"
+  src="/images/hero-light.svg"
+  alt="BillBuddy Hero"
+/>
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.svg"
+  alt="BillBuddy Hero"
+/>
+
+## What is BillBuddy?
+
+BillBuddy is a comprehensive expense-sharing application that helps you split bills, track shared expenses, and settle up with friends, roommates, or any group. Built with the MERN stack (MongoDB, Express.js, React, Node.js), BillBuddy provides an intuitive interface for managing group finances.
+
+Whether you're splitting rent with roommates, managing a trip with friends, or tracking shared household expenses, BillBuddy simplifies the process with automatic balance calculation, debt simplification, and email settlement summaries.
+
+## Core features
+
+<CardGroup cols={2}>
+  <Card
+    title="User authentication"
+    icon="lock"
+    href="/api/authentication"
+  >
+    Secure JWT-based authentication with bcrypt password hashing. Register, login, and manage user profiles with token-based authorization.
+  </Card>
+  <Card
+    title="Group management"
+    icon="users"
+    href="/api/groups"
+  >
+    Create groups, invite members, and track balances. Support for multiple groups with automated balance calculation and member management.
+  </Card>
+  <Card
+    title="Expense splitting"
+    icon="receipt"
+    href="/api/expenses"
+  >
+    Add expenses and split them equally among group members. Categorize expenses (Food, Travel, Shopping, Entertainment, Utilities) for better tracking.
+  </Card>
+  <Card
+    title="Debt simplification"
+    icon="calculator"
+    href="/api/settlements"
+  >
+    Automatically calculate who owes whom and simplify debts. Generate settlement summaries and send email notifications when settling up.
+  </Card>
+</CardGroup>
+
+## Technology stack
+
+BillBuddy leverages modern web technologies for a robust and scalable application:
+
+- **Backend**: Node.js (v18+) with Express.js framework
+- **Database**: MongoDB (v4.4+) with Mongoose ODM
+- **Frontend**: React 18 with Vite build tool
+- **UI Framework**: Material-UI (MUI) components with custom theming
+- **Authentication**: JSON Web Tokens (JWT) with 30-day expiration
+- **Email Service**: Web3Forms API for settlement notifications
+- **Styling**: Tailwind CSS and Emotion for component styling
+
+## Getting started
+
+<CardGroup cols={2}>
+  <Card
+    title="Quickstart"
+    icon="bolt"
+    href="/quickstart"
+  >
+    Get BillBuddy running locally in under 5 minutes with our quick setup guide.
+  </Card>
+  <Card
+    title="Installation"
+    icon="download"
+    href="/installation"
+  >
+    Detailed installation instructions for both backend and frontend, including environment configuration.
+  </Card>
+  <Card
+    title="API reference"
+    icon="code"
+    href="/api/overview"
+  >
+    Explore the complete API documentation with endpoints for authentication, groups, expenses, and settlements.
+  </Card>
+  <Card
+    title="Configuration"
+    icon="gear"
+    href="/configuration/environment"
+  >
+    Configure environment variables, database connections, and email settings for your deployment.
+  </Card>
+</CardGroup>
+
+## Key capabilities
+
+### Real-time balance tracking
+
+BillBuddy automatically calculates and updates member balances as expenses are added. The `calculateBalances()` method in the Group model ensures accurate tracking across all transactions.
+
+### Smart expense splitting
+
+Expenses are split equally among selected group members. Each expense tracks who paid, the amount, and who it's split among, with automatic per-person share calculation.
+
+### Category-based organization
+
+Organize expenses into categories (Food, Travel, Shopping, Entertainment, Utilities, Other) for better insights into spending patterns.
+
+### Email settlement summaries
+
+When settling up, BillBuddy sends formatted email summaries to all group members showing final balances and who owes whom.
+
+<Note>
+  BillBuddy requires Node.js v18 or higher and MongoDB v4.4 or higher. Make sure you have these prerequisites installed before proceeding.
+</Note>
+
+## Next steps
+
+<Steps>
+  <Step title="Follow the quickstart guide">
+    Get BillBuddy running locally with our [quickstart guide](/quickstart).
+  </Step>
+  <Step title="Explore the API">
+    Learn about available endpoints in the [API reference](/api/overview).
+  </Step>
+  <Step title="Customize your setup">
+    Configure authentication, email settings, and database connections in the [configuration guide](/configuration/environment).
+  </Step>
+</Steps>

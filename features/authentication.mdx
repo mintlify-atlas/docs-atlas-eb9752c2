@@ -1,0 +1,337 @@
+---
+title: 'Authentication'
+description: 'Learn how BillBuddy secures user accounts with JWT tokens and bcrypt password hashing'
+icon: 'shield-halved'
+---
+
+## Overview
+
+BillBuddy implements a secure authentication system using JSON Web Tokens (JWT) for session management and bcrypt for password hashing. All authenticated routes require a valid JWT token passed in the request headers.
+
+## Authentication Flow
+
+<Steps>
+  <Step title="User Registration">
+    Users create an account by providing their name, email, and password. Passwords are automatically hashed using bcrypt before being stored in the database.
+  </Step>
+  <Step title="Token Generation">
+    Upon successful registration or login, the system generates a JWT token that expires in 30 days.
+  </Step>
+  <Step title="Authenticated Requests">
+    The token must be included in the `Authorization` header as a Bearer token for all protected endpoints.
+  </Step>
+  <Step title="Token Verification">
+    The authentication middleware verifies the token and attaches the user object to the request.
+  </Step>
+</Steps>
+
+## User Model
+
+The User model is defined in `backend/models/User.js:5-35` and includes the following fields:
+
+<CodeGroup>
+```javascript User Schema
+const UserSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Please add a name'],
+    trim: true,
+    maxlength: [50, 'Name cannot be more than 50 characters']
+  },
+  email: {
+    type: String,
+    required: [true, 'Please add an email'],
+    unique: true,
+    match: [
+      /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
+      'Please add a valid email'
+    ]
+  },
+  password: {
+    type: String,
+    required: [true, 'Please add a password'],
+    minlength: 6,
+    select: false // Password is excluded from queries by default
+  },
+  groups: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Group'
+  }],
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+```
+</CodeGroup>
+
+<Info>
+  **Security Feature**: The password field has `select: false`, which means it's automatically excluded from database queries unless explicitly requested. This prevents accidental password exposure.
+</Info>
+
+## Password Hashing with bcrypt
+
+BillBuddy uses bcrypt to hash passwords with a salt round of 10, providing strong protection against rainbow table and brute-force attacks.
+
+<CodeGroup>
+```javascript Password Hashing
+// Encrypt password using bcrypt
+UserSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) {
+    next();
+  }
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+});
+```
+
+```javascript Password Verification
+// Match user entered password to hashed password in database
+UserSchema.methods.matchPassword = async function(enteredPassword) {
+  return await bcrypt.compare(enteredPassword, this.password);
+};
+```
+</CodeGroup>
+
+<Note>
+  The `pre('save')` middleware automatically hashes passwords before saving to the database. It only rehashes if the password field has been modified.
+</Note>
+
+## JWT Token Generation
+
+JWT tokens are signed with a secret key and expire after 30 days. The token payload contains the user's ID.
+
+```javascript JWT Token Method
+// Sign JWT and return
+UserSchema.methods.getSignedJwtToken = function() {
+  return jwt.sign({ id: this._id }, process.env.JWT_SECRET, {
+    expiresIn: '30d'
+  });
+};
+```
+
+## API Endpoints
+
+### Register a New User
+
+<Card title="POST /api/auth/register" icon="user-plus">
+  Create a new user account and receive an authentication token.
+</Card>
+
+**Request Body:**
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "securepassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+<Warning>
+  If a user with the provided email already exists, the API returns a 400 error with the message "User already exists".
+</Warning>
+
+### Login
+
+<Card title="POST /api/auth/login" icon="right-to-bracket">
+  Authenticate with email and password to receive a token.
+</Card>
+
+**Request Body:**
+```json
+{
+  "email": "john@example.com",
+  "password": "securepassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Implementation** (from `backend/routes/auth.js:44-71`):
+```javascript
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    // Check if user exists (explicitly select password field)
+    const user = await User.findOne({ email }).select('+password');
+    if (!user) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Check if password matches
+    const isMatch = await user.matchPassword(password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Invalid credentials' });
+    }
+
+    // Create token
+    const token = user.getSignedJwtToken();
+
+    res.json({
+      success: true,
+      token
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+```
+
+### Get Current User
+
+<Card title="GET /api/auth/me" icon="user">
+  Retrieve the currently authenticated user's profile.
+</Card>
+
+**Headers:**
+```
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "groups": [],
+  "createdAt": "2026-03-03T10:30:00.000Z"
+}
+```
+
+## Authentication Middleware
+
+The `protect` middleware (defined in `backend/middleware/auth.js:4-31`) verifies JWT tokens on protected routes:
+
+```javascript
+const protect = async (req, res, next) => {
+  let token;
+
+  if (
+    req.headers.authorization &&
+    req.headers.authorization.startsWith('Bearer')
+  ) {
+    try {
+      // Get token from header
+      token = req.headers.authorization.split(' ')[1];
+
+      // Verify token
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+      // Get user from the token
+      req.user = await User.findById(decoded.id).select('-password');
+
+      next();
+    } catch (error) {
+      console.error(error);
+      res.status(401).json({ message: 'Not authorized' });
+    }
+  }
+
+  if (!token) {
+    res.status(401).json({ message: 'Not authorized, no token' });
+  }
+};
+```
+
+## Using Authentication in Your App
+
+<Tabs>
+  <Tab title="JavaScript">
+    ```javascript
+    // Store token after login/registration
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        email: 'user@example.com',
+        password: 'password123'
+      })
+    });
+
+    const { token } = await response.json();
+    localStorage.setItem('token', token);
+
+    // Use token for authenticated requests
+    const userData = await fetch('/api/auth/me', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    ```
+  </Tab>
+  <Tab title="cURL">
+    ```bash
+    # Login
+    curl -X POST http://localhost:5000/api/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"email":"user@example.com","password":"password123"}'
+
+    # Use token for authenticated requests
+    curl http://localhost:5000/api/auth/me \
+      -H "Authorization: Bearer YOUR_TOKEN_HERE"
+    ```
+  </Tab>
+</Tabs>
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Environment Variables">
+    Always store your `JWT_SECRET` in environment variables, never in code. Use a long, random string (at least 32 characters).
+    
+    ```bash
+    JWT_SECRET=your_super_secret_key_here_min_32_chars
+    ```
+  </Accordion>
+
+  <Accordion title="Token Storage">
+    Store tokens securely in your frontend:
+    - Use `httpOnly` cookies for web apps (prevents XSS attacks)
+    - Use secure storage APIs for mobile apps
+    - Avoid storing in localStorage if possible (vulnerable to XSS)
+  </Accordion>
+
+  <Accordion title="Password Requirements">
+    The minimum password length is 6 characters. Consider adding additional validation for:
+    - Uppercase and lowercase letters
+    - Numbers and special characters
+    - Checking against common password lists
+  </Accordion>
+
+  <Accordion title="Token Expiration">
+    Tokens expire after 30 days. Implement token refresh logic in production or reduce the expiration time for enhanced security.
+  </Accordion>
+</AccordionGroup>
+
+## Error Handling
+
+| Status Code | Message | Cause |
+|-------------|---------|-------|
+| 400 | User already exists | Email is already registered |
+| 400 | Invalid credentials | Email or password is incorrect |
+| 401 | Not authorized, no token | No Bearer token provided |
+| 401 | Not authorized | Token is invalid or expired |
+| 500 | Server error | Internal server error |
+
+<Tip>
+  For security reasons, login failures return a generic "Invalid credentials" message rather than specifying whether the email or password was incorrect.
+</Tip>

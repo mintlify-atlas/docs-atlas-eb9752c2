@@ -1,0 +1,276 @@
+---
+title: Creating Groups
+description: Learn how to create and set up expense groups in BillBuddy
+---
+
+Groups are the foundation of BillBuddy, allowing you to track shared expenses with roommates, friends, or travel companions. This guide walks you through creating your first group.
+
+## Overview
+
+When you create a group, you'll need to:
+- Give it a name and optional description
+- Add members by their email addresses
+- Invite users who don't have BillBuddy accounts yet
+
+Once created, you and all members can add expenses, view balances, and settle up when ready.
+
+<Steps>
+  <Step title="Navigate to Create Group">
+    From your dashboard, click the **"Create Group"** button or navigate to `/create-group`.
+    
+    You'll see a clean form with fields for your group details.
+  </Step>
+
+  <Step title="Enter Group Details">
+    Fill in the required information:
+
+    <ParamField path="name" type="string" required>
+      The name of your group (e.g., "Summer Road Trip", "Apartment 4B", "Office Lunch Club")
+      
+      Must be 50 characters or less.
+    </ParamField>
+
+    <ParamField path="description" type="string">
+      Optional description to help members understand the group's purpose
+      
+      Can be up to 500 characters. Use this to add context like "Our monthly shared groceries" or "Weekend getaway to the mountains".
+    </ParamField>
+
+    ```jsx
+    // Source: CreateGroup.jsx:109-127
+    <TextField
+      required
+      fullWidth
+      label="Group Name"
+      name="name"
+      value={formData.name}
+      onChange={handleChange}
+    />
+    <TextField
+      fullWidth
+      label="Description"
+      name="description"
+      multiline
+      rows={4}
+      value={formData.description}
+      onChange={handleChange}
+    />
+    ```
+  </Step>
+
+  <Step title="Add Members">
+    Add group members by entering their email addresses:
+
+    1. Type an email address in the "Member Email" field
+    2. Click the **+** button or press **Enter** to add them
+    3. Repeat for all members you want to invite
+
+    <Note>
+      Email addresses are validated in real-time. You'll see an error if:
+      - The email format is invalid
+      - You try to add the same email twice
+    </Note>
+
+    Members appear as chips below the input field. Click the **X** on any chip to remove that member.
+
+    ```jsx
+    // Source: CreateGroup.jsx:37-59
+    const handleAddMember = () => {
+      if (!memberEmail) {
+        setError('Please enter an email address');
+        return;
+      }
+
+      if (!validateEmail(memberEmail)) {
+        setError('Please enter a valid email address');
+        return;
+      }
+
+      if (formData.members.includes(memberEmail)) {
+        setError('This member is already added');
+        return;
+      }
+
+      setFormData({
+        ...formData,
+        members: [...formData.members, memberEmail],
+      });
+      setMemberEmail('');
+      setError('');
+    };
+    ```
+
+    <Warning>
+      You must add **at least one member** to create a group. Groups with no members cannot be created.
+    </Warning>
+  </Step>
+
+  <Step title="Create the Group">
+    Once you've added your group name and at least one member, click **"Create Group"**.
+
+    The API will:
+    1. Validate your input
+    2. Create or find users for each email address
+    3. Generate the new group
+    4. Add all members with a starting balance of ₹0
+
+    ```javascript
+    // Backend: routes/groups.js:10-60
+    // Members are automatically created if they don't exist
+    const memberUsers = await Promise.all(
+      members.map(async ({ email }) => {
+        let user = await User.findOne({ email });
+        if (!user) {
+          user = new User({
+            name: email.split('@')[0],
+            email,
+            password: Math.random().toString(36).slice(-8),
+          });
+          await user.save();
+        }
+        return user._id;
+      })
+    );
+    ```
+
+    Upon success, you'll be redirected to the group page where you can start adding expenses.
+  </Step>
+</Steps>
+
+## What Happens Behind the Scenes
+
+When you create a group, BillBuddy:
+
+<AccordionGroup>
+  <Accordion title="Auto-creates accounts for new users">
+    If you add a member who doesn't have a BillBuddy account, the system automatically creates one using:
+    - Their email address
+    - A username derived from their email (everything before @)
+    - A randomly generated temporary password
+    
+    They'll receive an invitation to set up their account properly.
+  </Accordion>
+
+  <Accordion title="Sets up member tracking">
+    Each member is added to the group with:
+    ```javascript
+    {
+      user: userId,
+      balance: 0  // Starting balance
+    }
+    ```
+    
+    You (the creator) are automatically included as the first member.
+  </Accordion>
+
+  <Accordion title="Links the group to all members">
+    The group is added to each member's `groups` array, so it appears on their dashboard immediately.
+  </Accordion>
+</AccordionGroup>
+
+## Example Group Creation
+
+Here's a complete example of creating a roommate expense group:
+
+<CodeGroup>
+```json Request Payload
+{
+  "name": "Apartment 4B - Monthly Expenses",
+  "description": "Shared utilities, groceries, and household supplies",
+  "members": [
+    { "email": "[email protected]" },
+    { "email": "[email protected]" },
+    { "email": "[email protected]" }
+  ]
+}
+```
+
+```json Response
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "Apartment 4B - Monthly Expenses",
+  "description": "Shared utilities, groceries, and household supplies",
+  "members": [
+    {
+      "user": {
+        "_id": "507f191e810c19729de860ea",
+        "name": "John Doe",
+        "email": "[email protected]"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f191e810c19729de860eb",
+        "name": "alice",
+        "email": "[email protected]"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f191e810c19729de860ec",
+        "name": "bob",
+        "email": "[email protected]"
+      },
+      "balance": 0
+    },
+    {
+      "user": {
+        "_id": "507f191e810c19729de860ed",
+        "name": "charlie",
+        "email": "[email protected]"
+      },
+      "balance": 0
+    }
+  ],
+  "createdBy": {
+    "_id": "507f191e810c19729de860ea",
+    "name": "John Doe",
+    "email": "[email protected]"
+  },
+  "isSettled": false,
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Add Expenses" icon="receipt" href="/guides/adding-expenses">
+    Learn how to add and split expenses among group members
+  </Card>
+  
+  <Card title="Manage Members" icon="users" href="/guides/managing-members">
+    Add or remove members from your group
+  </Card>
+  
+  <Card title="Settle Debts" icon="money-bill-transfer" href="/guides/settling-debts">
+    Understand how to settle up when it's time to square accounts
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/groups">
+    View the complete API documentation for group creation
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Error: 'Group name is required'">
+    Make sure you've filled in the group name field. Empty or whitespace-only names are not allowed.
+  </Accordion>
+
+  <Accordion title="Error: 'Please add at least one member'">
+    You need to add at least one other person to create a group. Groups cannot exist with only the creator.
+  </Accordion>
+
+  <Accordion title="Error: 'Please enter a valid email address'">
+    The email format is invalid. Ensure it follows the pattern: `[email protected]`
+  </Accordion>
+
+  <Accordion title="Can't see my newly created group">
+    After creation, you should be automatically redirected to the group page. If not, check your Groups list from the dashboard. The group should appear there immediately.
+  </Accordion>
+</AccordionGroup>

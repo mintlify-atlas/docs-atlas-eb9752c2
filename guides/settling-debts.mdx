@@ -1,0 +1,441 @@
+---
+title: Settling Debts
+description: Learn how to settle group balances and view optimized payment plans in BillBuddy
+---
+
+Once your group has accumulated expenses, you'll eventually want to settle up. BillBuddy provides an intelligent debt simplification algorithm that minimizes the number of transactions needed.
+
+## Understanding Settlements
+
+<Info>
+  BillBuddy's settlement feature calculates the **minimum number of payments** required to balance all debts in a group.
+  
+  Instead of everyone paying everyone else, the algorithm optimizes to reduce transaction complexity.
+</Info>
+
+### Settlement States
+
+Groups can be in one of two states:
+
+<CardGroup cols={2}>
+  <Card title="Active" icon="receipt">
+    Expenses can be added and balances change dynamically. This is the default state for all new groups.
+  </Card>
+  
+  <Card title="Settled" icon="circle-check">
+    The group is marked as settled with a final settlement summary. No new expenses can be added (in the current implementation).
+  </Card>
+</CardGroup>
+
+## How to Settle Up
+
+<Steps>
+  <Step title="Navigate to Your Group">
+    Go to the group page you want to settle. You'll see all expenses and current member balances displayed as chips:
+
+    ```jsx
+    // Source: Group.jsx:174-183
+    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+      {group.members.map((member) => (
+        <Chip
+          avatar={<Avatar>{member.user.name[0]}</Avatar>}
+          label={`${member.user.name} (₹${balances[member.user._id]?.toFixed(2)})`}
+          color={balances[member.user._id] > 0 ? 'success' : 
+                 balances[member.user._id] < 0 ? 'error' : 'default'}
+        />
+      ))}
+    </Box>
+    ```
+
+    Balance colors:
+    - **Green**: Positive balance (owed money)
+    - **Red**: Negative balance (owes money)
+    - **Gray**: Zero balance (settled)
+  </Step>
+
+  <Step title="Click the Menu Button">
+    In the top-right corner of the group page, click the three-dot menu icon (⋮).
+
+    ```jsx
+    // Source: Group.jsx:165-170
+    <IconButton onClick={handleMenuOpen}>
+      <MoreVertIcon />
+    </IconButton>
+    <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+      <MenuItem onClick={handleSettleUp} disabled={group.isSettled}>
+        {group.isSettled ? <><CheckCircleIcon />Settled</> : 'Settle Up'}
+      </MenuItem>
+    </Menu>
+    ```
+
+    <Note>
+      If the group is already settled, the menu item will show "Settled" with a checkmark and be disabled.
+    </Note>
+  </Step>
+
+  <Step title="Confirm Settlement">
+    Click **"Settle Up"** from the dropdown menu.
+
+    The system will:
+    1. Calculate final balances from all expenses
+    2. Run the debt simplification algorithm
+    3. Create a settlement record with the optimized payment plan
+    4. Mark the group as settled
+
+    ```javascript
+    // Backend: routes/settlements.js:76-142
+    router.post('/', protect, async (req, res) => {
+      const { group: groupId } = req.body;
+      
+      // Calculate final balances
+      const expenses = await Expense.find({ group: groupId });
+      const balances = {};
+      
+      expenses.forEach(expense => {
+        balances[expense.paidBy.toString()] += expense.amount;
+        const splitAmount = expense.amount / expense.splitAmong.length;
+        expense.splitAmong.forEach(userId => {
+          balances[userId.toString()] -= splitAmount;
+        });
+      });
+      
+      // Simplify debts
+      const settlementSummary = simplifyDebts(balances);
+      
+      // Create settlement
+      const settlement = new Settlement({
+        group: groupId,
+        createdBy: req.user.id,
+        status: 'completed',
+        summary: settlementSummary,
+        type: 'group',
+      });
+      
+      await settlement.save();
+      groupDoc.isSettled = true;
+      await groupDoc.save();
+    });
+    ```
+  </Step>
+
+  <Step title="View Settlement Summary">
+    After settling, a **Settlement Summary** section appears on the group page showing the optimized payment plan:
+
+    ```jsx
+    // Source: Group.jsx:188-225
+    {group.isSettled && settlement?.summary && (
+      <Card>
+        <CardContent>
+          <Typography variant="h6">Settlement Summary</Typography>
+          <List>
+            {settlement.summary.map((txn) => (
+              <ListItem>
+                <ListItemAvatar>
+                  <Avatar sx={{ bgcolor: 'success.light' }}>
+                    <ReceiptLongIcon />
+                  </Avatar>
+                </ListItemAvatar>
+                <ListItemText
+                  primary={
+                    <Typography>
+                      <strong>{txn.from.name}</strong> owes 
+                      <strong>₹{txn.amount.toFixed(2)}</strong> to 
+                      <strong>{txn.to.name}</strong>
+                    </Typography>
+                  }
+                />
+              </ListItem>
+            ))}
+          </List>
+        </CardContent>
+      </Card>
+    )}
+    ```
+
+    Each transaction shows:
+    - Who pays
+    - How much
+    - Who receives the payment
+  </Step>
+</Steps>
+
+## Debt Simplification Algorithm
+
+BillBuddy uses a greedy algorithm to minimize transactions:
+
+```javascript
+// Source: routes/settlements.js:14-70
+const simplifyDebts = (balances) => {
+  // Separate creditors (owed money) and debtors (owe money)
+  const balanceArray = Object.keys(balances).map(userId => ({
+    user: userId,
+    amount: balances[userId]
+  }));
+  
+  const creditors = balanceArray.filter(b => b.amount > 0);
+  const debtors = balanceArray.filter(b => b.amount < 0);
+  
+  // Sort by largest amounts
+  creditors.sort((a, b) => b.amount - a.amount);
+  debtors.sort((a, b) => a.amount - b.amount);
+  
+  const transactions = [];
+  let debtorIndex = 0;
+  let creditorIndex = 0;
+  
+  while (debtorIndex < debtors.length && creditorIndex < creditors.length) {
+    const debtor = debtors[debtorIndex];
+    const creditor = creditors[creditorIndex];
+    
+    // Settle the smaller of the two amounts
+    const amountToSettle = Math.min(Math.abs(debtor.amount), creditor.amount);
+    const roundedAmount = Math.round(amountToSettle * 100) / 100;
+    
+    if (roundedAmount > 0) {
+      transactions.push({
+        from: debtor.user,
+        to: creditor.user,
+        amount: roundedAmount,
+      });
+    }
+    
+    // Update balances
+    debtor.amount += roundedAmount;
+    creditor.amount -= roundedAmount;
+    
+    // Move to next if settled
+    if (Math.abs(debtor.amount) < 0.01) debtorIndex++;
+    if (creditor.amount < 0.01) creditorIndex++;
+  }
+  
+  return transactions;
+};
+```
+
+### Algorithm Explained
+
+<Accordion title="How It Works">
+  1. **Separate creditors and debtors**: Split members into those owed money (positive balance) and those who owe (negative balance)
+  
+  2. **Sort by magnitude**: Largest creditors and largest debtors first
+  
+  3. **Match iteratively**: 
+     - Take the largest debtor and largest creditor
+     - Create a transaction for the minimum of their amounts
+     - Update their balances
+     - Move to the next person if one is fully settled
+  
+  4. **Repeat**: Continue until all balances are zero
+  
+  This greedy approach guarantees the minimum number of transactions.
+</Accordion>
+
+## Settlement Examples
+
+<Tabs>
+  <Tab title="Simple 3-Person">
+    **Initial Balances:**
+    ```
+    Alice:   +₹200  (owed ₹200)
+    Bob:     -₹100  (owes ₹100)
+    Charlie: -₹100  (owes ₹100)
+    ```
+
+    **Optimized Settlement:**
+    ```json
+    [
+      { "from": "Bob", "to": "Alice", "amount": 100 },
+      { "from": "Charlie", "to": "Alice", "amount": 100 }
+    ]
+    ```
+
+    **Result:** 2 transactions instead of potentially more complex chains
+  </Tab>
+
+  <Tab title="Complex 4-Person">
+    **Initial Balances:**
+    ```
+    Alice:   +₹500  (owed ₹500)
+    Bob:     +₹200  (owed ₹200)
+    Charlie: -₹400  (owes ₹400)
+    David:   -₹300  (owes ₹300)
+    ```
+
+    **Optimized Settlement:**
+    ```json
+    [
+      { "from": "Charlie", "to": "Alice", "amount": 400 },
+      { "from": "David", "to": "Alice", "amount": 100 },
+      { "from": "David", "to": "Bob", "amount": 200 }
+    ]
+    ```
+
+    **Result:** 3 transactions to settle a 4-person group
+
+    Without optimization, this could have required up to 6 transactions!
+  </Tab>
+
+  <Tab title="Already Balanced">
+    **Initial Balances:**
+    ```
+    Alice:   ₹0
+    Bob:     ₹0
+    Charlie: ₹0
+    ```
+
+    **Optimized Settlement:**
+    ```json
+    []
+    ```
+
+    **Result:** No transactions needed
+
+    The UI displays: "All balances were already settled. No payments are needed."
+
+    ```jsx
+    // Source: Group.jsx:216-220
+    {settlement.summary.length === 0 && (
+      <Typography variant="body2" color="text.secondary">
+        All balances were already settled. No payments are needed.
+      </Typography>
+    )}
+    ```
+  </Tab>
+</Tabs>
+
+## Settlement Data Model
+
+Settlements are stored with the following structure:
+
+```javascript
+// Source: models/Settlement.js
+{
+  group: ObjectId,           // Reference to the group
+  type: 'group',              // 'group' or 'individual'
+  createdBy: ObjectId,        // Who initiated the settlement
+  status: 'completed',        // 'pending', 'completed', or 'cancelled'
+  summary: [                  // Optimized transaction list
+    {
+      from: ObjectId,         // User who pays
+      to: ObjectId,           // User who receives
+      amount: Number          // Amount to transfer
+    }
+  ],
+  createdAt: Date
+}
+```
+
+<Note>
+  The `type` field supports both `'group'` (settle entire group) and `'individual'` (settle between two people), though the UI currently only implements group settlements.
+</Note>
+
+## Viewing Past Settlements
+
+You can retrieve all settlements for a group:
+
+```javascript
+// Backend: routes/settlements.js:144-174
+GET /api/settlements/group/:groupId
+
+// Returns array of settlements
+[
+  {
+    "_id": "507f1f77bcf86cd799439013",
+    "group": "507f1f77bcf86cd799439011",
+    "type": "group",
+    "status": "completed",
+    "createdBy": {
+      "_id": "507f191e810c19729de860ea",
+      "name": "Alice",
+      "email": "[email protected]"
+    },
+    "summary": [
+      {
+        "from": { "_id": "...", "name": "Bob" },
+        "to": { "_id": "...", "name": "Alice" },
+        "amount": 150
+      }
+    ],
+    "createdAt": "2024-01-20T15:30:00.000Z"
+  }
+]
+```
+
+## Important Considerations
+
+<Warning>
+  Once a group is settled:
+  - The `isSettled` flag is set to `true`
+  - The "Settle Up" menu option becomes disabled
+  - In the current implementation, you cannot add new expenses to settled groups
+  
+  If you need to track new expenses, you should create a new group.
+</Warning>
+
+<Accordion title="Can I unsettled a group?">
+  The current implementation doesn't support unsettling groups through the UI. However, you could:
+  
+  1. Use the API to update the group's `isSettled` field back to `false`
+  2. Delete the settlement record if needed
+  
+  This feature may be added in a future update.
+</Accordion>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Review Before Settling" icon="eye">
+    Double-check all expenses are recorded before clicking "Settle Up"
+  </Card>
+  
+  <Card title="Communicate the Plan" icon="comments">
+    Share the settlement summary with all members so everyone knows who pays whom
+  </Card>
+  
+  <Card title="Track Payments Externally" icon="mobile">
+    BillBuddy shows who owes what, but doesn't track actual payments. Use Venmo, bank transfers, or cash to complete transactions.
+  </Card>
+  
+  <Card title="Screenshot for Records" icon="camera">
+    Take a screenshot of the settlement summary for your records
+  </Card>
+</CardGroup>
+
+## API Reference
+
+<CodeGroup>
+```javascript Create Settlement
+POST /api/settlements
+Authorization: Bearer <token>
+
+{
+  "group": "507f1f77bcf86cd799439011"
+}
+```
+
+```javascript Get Group Settlements
+GET /api/settlements/group/:groupId
+Authorization: Bearer <token>
+```
+
+```javascript Update Settlement Status
+PUT /api/settlements/:id/status
+Authorization: Bearer <token>
+
+{
+  "status": "completed"
+}
+```
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Create New Group" icon="plus" href="/guides/creating-groups">
+    Start a new group for future expenses
+  </Card>
+  
+  <Card title="API Reference" icon="code" href="/api/settlements">
+    View complete settlement API documentation
+  </Card>
+</CardGroup>

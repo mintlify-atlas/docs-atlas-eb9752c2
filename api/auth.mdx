@@ -1,0 +1,205 @@
+---
+title: 'Authentication'
+description: 'User authentication and registration endpoints'
+---
+
+## Register User
+
+<api method="POST" path="/api/auth/register" />
+
+Create a new user account.
+
+### Request Body
+
+<ParamField body="name" type="string" required>
+  User's full name (max 50 characters)
+</ParamField>
+
+<ParamField body="email" type="string" required>
+  User's email address (must be valid email format)
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password (minimum 6 characters)
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Indicates if the registration was successful
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  JWT authentication token (valid for 30 days)
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X POST https://api.billbuddy.com/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
+```
+
+### Example Response
+
+```json 201 Created
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+### Error Responses
+
+```json 400 Bad Request
+{
+  "message": "User already exists"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "message": "Server error"
+}
+```
+
+---
+
+## Login User
+
+<api method="POST" path="/api/auth/login" />
+
+Authenticate a user and receive a JWT token.
+
+### Request Body
+
+<ParamField body="email" type="string" required>
+  User's email address
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  User's password
+</ParamField>
+
+### Response
+
+<ResponseField name="success" type="boolean">
+  Indicates if the login was successful
+</ResponseField>
+
+<ResponseField name="token" type="string">
+  JWT authentication token (valid for 30 days)
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X POST https://api.billbuddy.com/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "john@example.com",
+    "password": "securepass123"
+  }'
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+### Error Responses
+
+```json 400 Bad Request
+{
+  "message": "Invalid credentials"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "message": "Server error"
+}
+```
+
+---
+
+## Get Current User
+
+<api method="GET" path="/api/auth/me" auth="bearer" />
+
+Retrieve the currently authenticated user's information.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+  
+  Example: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+</ParamField>
+
+### Response
+
+<ResponseField name="_id" type="string">
+  User's unique identifier
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  User's full name
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  User's email address
+</ResponseField>
+
+<ResponseField name="groups" type="array">
+  Array of group IDs the user belongs to
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  ISO 8601 timestamp of account creation
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X GET https://api.billbuddy.com/api/auth/me \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "_id": "507f1f77bcf86cd799439011",
+  "name": "John Doe",
+  "email": "john@example.com",
+  "groups": [
+    "507f191e810c19729de860ea",
+    "507f191e810c19729de860eb"
+  ],
+  "createdAt": "2024-01-15T10:30:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 401 Unauthorized
+{
+  "message": "Not authorized to access this route"
+}
+```
+
+```json 500 Internal Server Error
+{
+  "message": "Server error"
+}
+```

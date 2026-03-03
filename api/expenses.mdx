@@ -1,0 +1,556 @@
+---
+title: 'Expenses'
+description: 'Expense tracking and management endpoints'
+---
+
+<Note>
+  All expense endpoints require authentication. Include the JWT token in the Authorization header.
+</Note>
+
+## Create Expense
+
+<api method="POST" path="/api/expenses" auth="bearer" />
+
+Create a new expense and add it to a group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Request Body
+
+<ParamField body="description" type="string" required>
+  Expense description (max 100 characters)
+</ParamField>
+
+<ParamField body="amount" type="number" required>
+  Expense amount (must be non-negative)
+</ParamField>
+
+<ParamField body="group" type="string" required>
+  Group ID where this expense belongs
+</ParamField>
+
+<ParamField body="splitAmong" type="array" required>
+  Array of user IDs to split the expense among
+</ParamField>
+
+<ParamField body="category" type="string">
+  Expense category. Options: `Food`, `Travel`, `Shopping`, `Entertainment`, `Utilities`, `Other`
+  
+  Default: `Other`
+</ParamField>
+
+### Response
+
+<ResponseField name="_id" type="string">
+  Expense's unique identifier
+</ResponseField>
+
+<ResponseField name="description" type="string">
+  Expense description
+</ResponseField>
+
+<ResponseField name="amount" type="number">
+  Expense amount
+</ResponseField>
+
+<ResponseField name="paidBy" type="string">
+  User ID of the person who paid
+</ResponseField>
+
+<ResponseField name="splitAmong" type="array">
+  Array of user IDs
+</ResponseField>
+
+<ResponseField name="group" type="string">
+  Group ID
+</ResponseField>
+
+<ResponseField name="category" type="string">
+  Expense category
+</ResponseField>
+
+<ResponseField name="date" type="string">
+  ISO 8601 timestamp
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X POST https://api.billbuddy.com/api/expenses \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Groceries for camping",
+    "amount": 150.50,
+    "group": "507f191e810c19729de860ea",
+    "splitAmong": [
+      "507f1f77bcf86cd799439011",
+      "507f1f77bcf86cd799439012"
+    ],
+    "category": "Food"
+  }'
+```
+
+### Example Response
+
+```json 201 Created
+{
+  "_id": "507f191e810c19729de860eb",
+  "description": "Groceries for camping",
+  "amount": 150.50,
+  "paidBy": "507f1f77bcf86cd799439011",
+  "splitAmong": [
+    "507f1f77bcf86cd799439011",
+    "507f1f77bcf86cd799439012"
+  ],
+  "group": "507f191e810c19729de860ea",
+  "category": "Food",
+  "date": "2024-01-15T14:30:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 500 Internal Server Error
+{
+  "message": "Server error"
+}
+```
+
+---
+
+## Get Recent Expenses
+
+<api method="GET" path="/api/expenses/recent" auth="bearer" />
+
+Retrieve the 10 most recent expenses for the current user (either paid by them or split with them).
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Response
+
+Returns an array of expense objects sorted by date (newest first), limited to 10 items.
+
+### Example Request
+
+```bash cURL
+curl -X GET https://api.billbuddy.com/api/expenses/recent \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+[
+  {
+    "_id": "507f191e810c19729de860eb",
+    "description": "Groceries for camping",
+    "amount": 150.50,
+    "paidBy": {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com"
+    },
+    "splitAmong": [
+      {
+        "_id": "507f1f77bcf86cd799439011",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      {
+        "_id": "507f1f77bcf86cd799439012",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+      }
+    ],
+    "group": {
+      "_id": "507f191e810c19729de860ea",
+      "name": "Weekend Trip"
+    },
+    "category": "Food",
+    "date": "2024-01-15T14:30:00.000Z"
+  }
+]
+```
+
+---
+
+## Get Group Expenses
+
+<api method="GET" path="/api/expenses/group/:groupId" auth="bearer" />
+
+Retrieve all expenses for a specific group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="groupId" type="string" required>
+  Group ID
+</ParamField>
+
+### Response
+
+Returns an array of expense objects for the specified group, sorted by date (newest first).
+
+### Example Request
+
+```bash cURL
+curl -X GET https://api.billbuddy.com/api/expenses/group/507f191e810c19729de860ea \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+[
+  {
+    "_id": "507f191e810c19729de860eb",
+    "description": "Groceries for camping",
+    "amount": 150.50,
+    "paidBy": {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com"
+    },
+    "splitAmong": [
+      {
+        "_id": "507f1f77bcf86cd799439011",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      {
+        "_id": "507f1f77bcf86cd799439012",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+      }
+    ],
+    "category": "Food",
+    "date": "2024-01-15T14:30:00.000Z"
+  },
+  {
+    "_id": "507f191e810c19729de860ec",
+    "description": "Gas for the trip",
+    "amount": 75.00,
+    "paidBy": {
+      "_id": "507f1f77bcf86cd799439012",
+      "name": "Alice Smith",
+      "email": "alice@example.com"
+    },
+    "splitAmong": [
+      {
+        "_id": "507f1f77bcf86cd799439011",
+        "name": "John Doe",
+        "email": "john@example.com"
+      },
+      {
+        "_id": "507f1f77bcf86cd799439012",
+        "name": "Alice Smith",
+        "email": "alice@example.com"
+      }
+    ],
+    "category": "Travel",
+    "date": "2024-01-15T12:00:00.000Z"
+  }
+]
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to access this group"
+}
+```
+
+---
+
+## Get Single Expense
+
+<api method="GET" path="/api/expenses/:id" auth="bearer" />
+
+Retrieve details of a specific expense.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Expense ID
+</ParamField>
+
+### Response
+
+Returns an expense object with populated user information.
+
+### Example Request
+
+```bash cURL
+curl -X GET https://api.billbuddy.com/api/expenses/507f191e810c19729de860eb \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "_id": "507f191e810c19729de860eb",
+  "description": "Groceries for camping",
+  "amount": 150.50,
+  "paidBy": {
+    "_id": "507f1f77bcf86cd799439011",
+    "name": "John Doe",
+    "email": "john@example.com"
+  },
+  "splitAmong": [
+    {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com"
+    },
+    {
+      "_id": "507f1f77bcf86cd799439012",
+      "name": "Alice Smith",
+      "email": "alice@example.com"
+    }
+  ],
+  "group": "507f191e810c19729de860ea",
+  "category": "Food",
+  "date": "2024-01-15T14:30:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Expense not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to access this expense"
+}
+```
+
+---
+
+## Update Expense
+
+<api method="PUT" path="/api/expenses/:id" auth="bearer" />
+
+Update an existing expense. Only the person who paid can update the expense.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Expense ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="description" type="string">
+  Updated expense description (max 100 characters)
+</ParamField>
+
+<ParamField body="amount" type="number">
+  Updated expense amount (must be non-negative)
+</ParamField>
+
+<ParamField body="splitAmong" type="array">
+  Updated array of user IDs to split the expense among
+</ParamField>
+
+<ParamField body="category" type="string">
+  Updated expense category
+</ParamField>
+
+### Example Request
+
+```bash cURL
+curl -X PUT https://api.billbuddy.com/api/expenses/507f191e810c19729de860eb \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "description": "Updated groceries description",
+    "amount": 165.75,
+    "category": "Food"
+  }'
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "_id": "507f191e810c19729de860eb",
+  "description": "Updated groceries description",
+  "amount": 165.75,
+  "paidBy": "507f1f77bcf86cd799439011",
+  "splitAmong": [
+    "507f1f77bcf86cd799439011",
+    "507f1f77bcf86cd799439012"
+  ],
+  "group": "507f191e810c19729de860ea",
+  "category": "Food",
+  "date": "2024-01-15T14:30:00.000Z"
+}
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Expense not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to update this expense"
+}
+```
+
+---
+
+## Delete Expense
+
+<api method="DELETE" path="/api/expenses/:id" auth="bearer" />
+
+Delete an expense. Only the person who paid can delete the expense.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="id" type="string" required>
+  Expense ID
+</ParamField>
+
+### Example Request
+
+```bash cURL
+curl -X DELETE https://api.billbuddy.com/api/expenses/507f191e810c19729de860eb \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "message": "Expense removed"
+}
+```
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Expense not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to delete this expense"
+}
+```
+
+---
+
+## Settle Group Expenses
+
+<api method="POST" path="/api/expenses/settle/:groupId" auth="bearer" />
+
+Calculate balances and settle all expenses in a group.
+
+### Headers
+
+<ParamField header="Authorization" type="string" required>
+  Bearer token for authentication
+</ParamField>
+
+### Path Parameters
+
+<ParamField path="groupId" type="string" required>
+  Group ID to settle
+</ParamField>
+
+### Response
+
+<ResponseField name="message" type="string">
+  Confirmation message
+</ResponseField>
+
+<ResponseField name="balances" type="object">
+  Object mapping user IDs to their final balance in the group
+</ResponseField>
+
+### Example Request
+
+```bash cURL
+curl -X POST https://api.billbuddy.com/api/expenses/settle/507f191e810c19729de860ea \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+### Example Response
+
+```json 200 OK
+{
+  "message": "Group settled successfully",
+  "balances": {
+    "507f1f77bcf86cd799439011": 75.25,
+    "507f1f77bcf86cd799439012": -75.25
+  }
+}
+```
+
+<Info>
+  Positive balance means the user is owed money. Negative balance means the user owes money.
+</Info>
+
+### Error Responses
+
+```json 404 Not Found
+{
+  "message": "Group not found"
+}
+```
+
+```json 403 Forbidden
+{
+  "message": "Not authorized to settle this group"
+}
+```

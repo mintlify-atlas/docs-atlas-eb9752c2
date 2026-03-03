@@ -1,0 +1,355 @@
+---
+title: 'Database Configuration'
+description: 'Configure MongoDB connection and database settings for BillBuddy'
+---
+
+## Overview
+
+BillBuddy uses MongoDB as its primary database, with Mongoose as the ODM (Object Data Modeling) library. This guide covers MongoDB setup, configuration, and connection management.
+
+## Prerequisites
+
+<ParamField path="MongoDB" type="version">
+  MongoDB version 4.4 or higher is required
+</ParamField>
+
+<ParamField path="Node.js" type="version">
+  Node.js version 14 or higher is required
+</ParamField>
+
+## MongoDB Installation
+
+### Local Installation
+
+**macOS (using Homebrew):**
+```bash
+brew tap mongodb/brew
+brew install mongodb-community@7.0
+brew services start mongodb-community@7.0
+```
+
+**Ubuntu/Debian:**
+```bash
+wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | sudo apt-key add -
+echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+sudo apt-get update
+sudo apt-get install -y mongodb-org
+sudo systemctl start mongod
+```
+
+**Windows:**
+Download and install from [MongoDB Download Center](https://www.mongodb.com/try/download/community)
+
+### Verify Installation
+
+```bash
+mongod --version
+```
+
+## Connection Configuration
+
+### Environment Variable
+
+Configure the MongoDB connection using the `MONGODB_URI` environment variable in your `.env` file:
+
+<ParamField path="MONGODB_URI" type="string" required>
+  Complete MongoDB connection string including protocol, host, port, and database name.
+</ParamField>
+
+### Local Development
+
+For local development, use the default MongoDB connection:
+
+```bash .env
+MONGDB_URI=mongodb://localhost:27017/billbuddy
+```
+
+**Connection String Breakdown:**
+- `mongodb://` - MongoDB protocol
+- `localhost:27017` - Host and port (default MongoDB port)
+- `billbuddy` - Database name
+
+### MongoDB Atlas (Cloud)
+
+For cloud deployment using MongoDB Atlas:
+
+```bash .env
+MONGDB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/billbuddy?retryWrites=true&w=majority
+```
+
+<Note>
+  Replace `<username>`, `<password>`, and `<cluster>` with your actual Atlas credentials and cluster name.
+</Note>
+
+**Setting up MongoDB Atlas:**
+
+1. Create an account at [MongoDB Atlas](https://www.mongodb.com/cloud/atlas)
+2. Create a new cluster (free tier available)
+3. Add a database user with read/write permissions
+4. Whitelist your IP address or allow access from anywhere (0.0.0.0/0)
+5. Get the connection string from the "Connect" button
+
+## Server Connection Code
+
+The MongoDB connection is established in `server.js`:
+
+```javascript backend/server.js
+const mongoose = require('mongoose');
+const dotenv = require('dotenv');
+
+// Load environment variables
+dotenv.config();
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log('Connected to MongoDB'))
+  .catch((err) => console.error('MongoDB connection error:', err));
+```
+
+<Note>
+  The connection uses Mongoose's default options, which include automatic reconnection and connection pooling.
+</Note>
+
+## Connection Options
+
+While BillBuddy uses default connection options, you can customize the connection with additional parameters:
+
+```javascript
+mongoose.connect(process.env.MONGODB_URI, {
+  // Optional configuration
+  serverSelectionTimeoutMS: 5000, // Timeout for server selection
+  socketTimeoutMS: 45000, // Socket timeout
+  maxPoolSize: 10, // Maximum connection pool size
+  minPoolSize: 5, // Minimum connection pool size
+})
+```
+
+## Database Schema
+
+BillBuddy uses four main collections:
+
+### Users Collection
+
+Stores user account information:
+
+```javascript backend/models/User.js
+const UserSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: 50
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true
+  },
+  password: {
+    type: String,
+    required: true,
+    minlength: 6,
+    select: false
+  },
+  groups: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Group'
+  }],
+  createdAt: {
+    type: Date,
+    default: Date.now
+  }
+});
+```
+
+### Groups Collection
+
+Stores expense groups and members.
+
+### Expenses Collection
+
+Stores individual expense records with splits.
+
+### Settlements Collection
+
+Stores settlement history for groups.
+
+## Database Operations
+
+### Creating Indexes
+
+BillBuddy automatically creates indexes based on schema definitions:
+
+- `email` field in User model has a unique index
+- All models have indexes on their `_id` field (MongoDB default)
+
+### Database Queries
+
+Example queries used in BillBuddy:
+
+```javascript
+// Find user by email
+const user = await User.findOne({ email });
+
+// Find user with password field (normally excluded)
+const user = await User.findOne({ email }).select('+password');
+
+// Populate related documents
+const groups = await Group.find({ 'members.user': userId })
+  .populate('members.user', 'name email');
+```
+
+## Connection Management
+
+### Connection Events
+
+Monitor MongoDB connection status:
+
+```javascript
+mongoose.connection.on('connected', () => {
+  console.log('Mongoose connected to MongoDB');
+});
+
+mongoose.connection.on('error', (err) => {
+  console.error('Mongoose connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  console.log('Mongoose disconnected from MongoDB');
+});
+```
+
+### Graceful Shutdown
+
+Close database connections on application shutdown:
+
+```javascript
+process.on('SIGINT', async () => {
+  await mongoose.connection.close();
+  console.log('MongoDB connection closed through app termination');
+  process.exit(0);
+});
+```
+
+## Testing the Connection
+
+Verify your database connection:
+
+```bash
+npm run dev
+```
+
+Expected output:
+```
+Connected to MongoDB
+Server running on port 5000
+```
+
+## Database Management
+
+### Using MongoDB Compass
+
+MongoDB Compass provides a GUI for database management:
+
+1. Download [MongoDB Compass](https://www.mongodb.com/products/compass)
+2. Connect using your connection string
+3. Browse collections, documents, and indexes
+4. Run queries and aggregations
+
+### Using MongoDB Shell
+
+Connect to your database via command line:
+
+```bash
+# Local MongoDB
+mongosh mongodb://localhost:27017/billbuddy
+
+# Show collections
+show collections
+
+# Query documents
+db.users.find().pretty()
+
+# Count documents
+db.expenses.countDocuments()
+```
+
+## Troubleshooting
+
+### Connection Refused
+
+**Problem:** `MongoNetworkError: connect ECONNREFUSED 127.0.0.1:27017`
+
+**Solution:**
+1. Verify MongoDB is running: `brew services list` (macOS) or `sudo systemctl status mongod` (Linux)
+2. Start MongoDB if stopped: `brew services start mongodb-community` or `sudo systemctl start mongod`
+
+### Authentication Failed
+
+**Problem:** `MongoServerError: Authentication failed`
+
+**Solution:**
+1. Check username and password in connection string
+2. Verify database user has correct permissions
+3. For Atlas, ensure IP whitelist is configured
+
+### Database Not Found
+
+<Note>
+  MongoDB automatically creates the database when you first insert data. You don't need to manually create it.
+</Note>
+
+### Connection Timeout
+
+**Problem:** `MongoServerSelectionError: connection timed out`
+
+**Solution:**
+1. Check network connectivity
+2. Verify firewall settings
+3. For Atlas, check IP whitelist
+4. Increase `serverSelectionTimeoutMS` in connection options
+
+## Performance Optimization
+
+### Connection Pooling
+
+Mongoose manages a connection pool automatically. Adjust pool size for high-traffic applications:
+
+```javascript
+mongoose.connect(process.env.MONGODB_URI, {
+  maxPoolSize: 50, // Increase for high concurrency
+  minPoolSize: 10
+});
+```
+
+### Query Optimization
+
+- Use `select()` to limit returned fields
+- Add indexes for frequently queried fields
+- Use `lean()` for read-only queries
+- Implement pagination for large datasets
+
+### Monitoring
+
+Monitor database performance:
+- MongoDB Atlas provides built-in monitoring
+- Use MongoDB Compass performance tab
+- Enable Mongoose debug mode: `mongoose.set('debug', true)`
+
+## Backup and Restore
+
+### Backup Database
+
+```bash
+mongodump --uri="mongodb://localhost:27017/billbuddy" --out=/path/to/backup
+```
+
+### Restore Database
+
+```bash
+mongorestore --uri="mongodb://localhost:27017/billbuddy" /path/to/backup/billbuddy
+```
+
+<Warning>
+  Always test your backup and restore procedures regularly to ensure data integrity.
+</Warning>
